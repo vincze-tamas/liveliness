@@ -1,7 +1,7 @@
 import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from services.training_load import (
     compute_pmc,
     compute_weekly,
 )
+from services.fit_parser import parse_fit_records
 
 
 class WeekSummary(BaseModel):
@@ -129,6 +130,20 @@ async def performance_management_chart(
 
 
 @router.get("/activity/{activity_id}/streams")
-async def activity_streams(activity_id: int) -> dict[str, Any]:
-    # TODO: return time-series streams (HR, pace, power, elevation) for an activity
-    return {}
+async def activity_streams(
+    activity_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    result = await db.execute(select(Activity).where(Activity.id == activity_id))
+    activity = result.scalar_one_or_none()
+    if activity is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    if not activity.fit_file_path:
+        return {}
+    try:
+        with open(activity.fit_file_path, "rb") as fh:
+            raw = fh.read()
+        return parse_fit_records(raw)
+    except FileNotFoundError:
+        return {}
+    except Exception:
+        return {}

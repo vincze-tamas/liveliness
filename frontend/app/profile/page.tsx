@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Save, RefreshCw, Upload, User, AlertCircle } from 'lucide-react'
+import { Save, RefreshCw, Upload, User, AlertCircle, CheckCircle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -59,8 +59,11 @@ export default function ProfilePage() {
   const [profileExists, setProfileExists] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<string | null>(null)
 
   // Load existing profile on mount
   useEffect(() => {
@@ -149,6 +152,8 @@ export default function ProfilePage() {
       }
       // Clear password field after successful save
       setProfile((prev) => ({ ...prev, garminPassword: '' }))
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save profile')
     } finally {
@@ -171,6 +176,30 @@ export default function ProfilePage() {
       setSyncResult(err instanceof Error ? err.message : 'Garmin sync failed')
     } finally {
       setIsSyncing(false)
+    }
+  }
+
+  const handleAppleHealthImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportResult(null)
+    setIsImporting(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const result = await apiFetch<{ metrics_days_upserted: number; activities_inserted: number }>(
+        '/api/health/import',
+        { method: 'POST', body: formData, headers: {} },
+      )
+      setImportResult(
+        `Imported: ${result.activities_inserted} activities, ${result.metrics_days_upserted} health metric days`,
+      )
+    } catch (err) {
+      setImportResult(err instanceof Error ? err.message : 'Import failed')
+    } finally {
+      setIsImporting(false)
+      // Reset file input so the same file can be re-selected if needed
+      e.target.value = ''
     }
   }
 
@@ -378,15 +407,20 @@ export default function ProfilePage() {
           >
             <Upload className="w-8 h-8 text-slate-300 dark:text-slate-600 group-hover:text-teal-500 dark:group-hover:text-teal-400 transition-colors" />
             <span className="text-sm text-slate-500 dark:text-slate-400">
-              Tap to upload Apple Health export (.zip)
+              {isImporting ? 'Importing…' : 'Tap to upload Apple Health export (.zip or export.xml)'}
             </span>
             <input
               id="healthImport"
               type="file"
-              accept=".zip"
+              accept=".zip,.xml"
               className="sr-only"
+              onChange={handleAppleHealthImport}
+              disabled={isImporting}
             />
           </label>
+          {importResult && (
+            <p className="text-sm text-slate-600 dark:text-slate-300">{importResult}</p>
+          )}
         </CardContent>
       </Card>
 
@@ -395,6 +429,12 @@ export default function ProfilePage() {
         <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           {saveError}
+        </div>
+      )}
+      {saveSuccess && (
+        <div className="flex items-center gap-2 text-sm text-teal-600 dark:text-teal-400">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          Profile saved
         </div>
       )}
       <Button

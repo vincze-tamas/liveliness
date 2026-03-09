@@ -28,6 +28,81 @@ SPORT_MAP: dict[str, str] = {
 }
 
 
+def parse_fit_records(data: bytes) -> dict[str, list[Any]]:
+    """Parse raw .fit bytes and return time-series streams.
+
+    Returns a dict with keys: ``time_s``, ``hr``, ``power``, ``altitude``,
+    ``speed_kmh``, ``pace_s_per_km`` — each a list aligned by index.
+    Only streams with at least one non-null value are included.
+    """
+    try:
+        from fitparse import FitFile  # type: ignore[import-untyped]
+    except ImportError:
+        raise RuntimeError("fitparse package not installed")
+
+    ff = FitFile(io.BytesIO(data))
+
+    time_s: list[float] = []
+    hr: list[int | None] = []
+    power: list[float | None] = []
+    altitude: list[float | None] = []
+    speed_kmh: list[float | None] = []
+    pace_s_per_km: list[float | None] = []
+
+    start_ts: float | None = None
+
+    for msg in ff.get_messages("record"):
+        fields = {f.name: f.value for f in msg.fields if f.value is not None}
+
+        ts = fields.get("timestamp")
+        if not isinstance(ts, datetime.datetime):
+            continue
+
+        ts_epoch = ts.timestamp()
+        if start_ts is None:
+            start_ts = ts_epoch
+
+        elapsed = ts_epoch - start_ts
+        time_s.append(elapsed)
+
+        hr.append(fields.get("heart_rate"))
+
+        pwr = fields.get("power")
+        power.append(float(pwr) if pwr is not None and int(pwr) != 0xFFFF else None)
+
+        alt = fields.get("altitude") or fields.get("enhanced_altitude")
+        altitude.append(float(alt) if alt is not None else None)
+
+        spd = fields.get("speed") or fields.get("enhanced_speed")  # m/s
+        if spd is not None:
+            spd_f = float(spd)
+            speed_kmh.append(round(spd_f * 3.6, 2))
+            pace_s_per_km.append(round(1000.0 / spd_f, 1) if spd_f > 0.1 else None)
+        else:
+            speed_kmh.append(None)
+            pace_s_per_km.append(None)
+
+    if not time_s:
+        return {}
+
+    def _any(lst: list) -> bool:
+        return any(v is not None for v in lst)
+
+    result: dict[str, list[Any]] = {"time_s": time_s}
+    if _any(hr):
+        result["hr"] = hr
+    if _any(power):
+        result["power"] = power
+    if _any(altitude):
+        result["altitude"] = altitude
+    if _any(speed_kmh):
+        result["speed_kmh"] = speed_kmh
+    if _any(pace_s_per_km):
+        result["pace_s_per_km"] = pace_s_per_km
+
+    return result
+
+
 def parse_fit_bytes(data: bytes) -> dict[str, Any]:
     """Parse raw .fit file bytes and return an activity dict.
 
