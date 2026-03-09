@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { User, Zap } from 'lucide-react'
+import { User, Zap, Settings } from 'lucide-react'
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -16,6 +16,8 @@ const pageTitles: Record<string, string> = {
   '/statistics/alltime': 'All-Time Stats',
   '/coach': 'AI Coach',
   '/profile': 'Profile',
+  '/setup': 'Setup',
+  '/offline': 'Offline',
 }
 
 export function TopHeader() {
@@ -37,13 +39,22 @@ export function TopHeader() {
         </span>
       </div>
 
-      <Link
-        href="/profile"
-        className="flex items-center justify-center w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-        aria-label="Profile"
-      >
-        <User className="w-4 h-4 text-slate-600 dark:text-slate-300" />
-      </Link>
+      <div className="flex items-center gap-1">
+        <Link
+          href="/setup"
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          aria-label="Setup"
+        >
+          <Settings className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+        </Link>
+        <Link
+          href="/profile"
+          className="flex items-center justify-center w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+          aria-label="Profile"
+        >
+          <User className="w-4 h-4 text-slate-600 dark:text-slate-300" />
+        </Link>
+      </div>
     </header>
   )
 }

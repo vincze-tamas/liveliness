@@ -4,6 +4,7 @@ import './globals.css'
 import { Providers } from './providers'
 import { BottomNav } from '@/components/nav/BottomNav'
 import { TopHeader } from '@/components/nav/TopHeader'
+import { InstallPrompt } from '@/components/InstallPrompt'
 
 const inter = Inter({
   subsets: ['latin'],
@@ -51,6 +52,7 @@ export default function RootLayout({
             {children}
           </main>
           <BottomNav />
+          <InstallPrompt />
         </Providers>
       </body>
     </html>
