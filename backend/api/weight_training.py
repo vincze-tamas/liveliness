@@ -52,14 +52,13 @@ def _enrich(session: WeightSession) -> dict:
     exercises = _parse_exercises(session.exercises)
     data["exercises_list"] = exercises
 
-    # Compute wTSS from aggregate RPE if duration is set
-    if session.duration_min and exercises:
+    # Compute wTSS from aggregate RPE if duration is set.
+    # If exercises exist but none have RPE logged, fall back to RPE 6.0 (moderate)
+    # to stay consistent with the PMC computation in training_load.py.
+    if session.duration_min:
         rpes = [e.get("rpe") for e in exercises if isinstance(e.get("rpe"), (int, float))]
-        if rpes:
-            avg_rpe = sum(rpes) / len(rpes)
-            data["wtss"] = calculate_wtss(session.duration_min, avg_rpe)
-        else:
-            data["wtss"] = None
+        avg_rpe = sum(rpes) / len(rpes) if rpes else 6.0
+        data["wtss"] = calculate_wtss(session.duration_min, avg_rpe)
     else:
         data["wtss"] = None
 
@@ -187,11 +186,15 @@ async def get_exercise_history(
     db: AsyncSession = Depends(get_db),
 ) -> list[dict]:
     """Return the last N sessions that include the named exercise, with per-set details."""
+    # Pre-filter at DB level using a case-insensitive LIKE on the JSON string.
+    # The Python loop below then does exact-name matching; the DB filter just
+    # avoids loading sessions that clearly don't mention the exercise at all.
     result = await db.execute(
         select(WeightSession)
         .where(WeightSession.exercises.isnot(None))
+        .where(WeightSession.exercises.ilike(f'%"{exercise_name}"%'))
         .order_by(WeightSession.date.desc())
-        .limit(200)  # scan recent history
+        .limit(limit * 3)  # fetch a small multiple to account for false positives
     )
     sessions = result.scalars().all()
 

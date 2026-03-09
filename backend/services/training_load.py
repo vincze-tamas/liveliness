@@ -6,9 +6,13 @@ computation (CTL / ATL / TSB) using the Banister impulse-response model.
 from __future__ import annotations
 
 import datetime
+import json
+import logging
 import math
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from models.activity import Activity
@@ -128,9 +132,9 @@ def compute_pmc(
         exercises = []
         if ws.exercises:
             try:
-                exercises = __import__("json").loads(ws.exercises)
+                exercises = json.loads(ws.exercises)
             except (ValueError, TypeError):
-                pass
+                logger.warning("weight_session id=%s has invalid exercises JSON — skipping exercise RPE", ws.id)
         if ws.duration_min and exercises:
             rpes = [e.get("rpe") for e in exercises if isinstance(e.get("rpe"), (int, float))]
             avg_rpe = sum(rpes) / len(rpes) if rpes else 6.0

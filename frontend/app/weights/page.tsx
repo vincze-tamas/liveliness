@@ -308,17 +308,22 @@ function OverloadPanel({ exercises }: { exercises: ExerciseLibraryItem[] }) {
     enabled: !!selected,
   })
 
-  // Compute trend between last two appearances
+  // Compute trend between last two appearances using total session volume (sets × reps × weight)
   function trend(): string | null {
     if (!history || history.length < 2) return null
-    const latest = history[0].exercises[0]
-    const prev = history[1].exercises[0]
-    if (latest?.weight_kg != null && prev?.weight_kg != null) {
-      const diff = (latest.weight_kg as number) - (prev.weight_kg as number)
-      if (diff === 0) return '= same weight as last time'
-      return `${diff > 0 ? '↑' : '↓'} ${Math.abs(diff)} kg vs last session`
-    }
-    return null
+    const totalVolume = (entries: typeof history[0]['exercises']): number =>
+      entries.reduce((sum, e) => {
+        const s = Number(e.sets) || 0
+        const r = Number(e.reps) || 0
+        const w = Number(e.weight_kg) || 0
+        return sum + s * r * w
+      }, 0)
+    const latestVol = totalVolume(history[0].exercises)
+    const prevVol = totalVolume(history[1].exercises)
+    if (latestVol === 0 && prevVol === 0) return null
+    const diff = latestVol - prevVol
+    if (diff === 0) return '= same volume as last time'
+    return `${diff > 0 ? '↑' : '↓'} ${Math.abs(Math.round(diff))} kg total volume vs last session`
   }
 
   const trendText = trend()
