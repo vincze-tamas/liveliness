@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Liveliness** is a personal endurance sports coaching web application for trail running and MTB training. It reads health and activity data from Apple Health (via an iOS Shortcut bridge) and Garmin Connect, generates adaptive weekly training plans, provides nutrition and hydration recommendations, and delivers AI-powered coaching insights via the Claude API.
+**Liveliness** is a personal endurance sports coaching web application for trail running, MTB, road biking, skiing, and inline roller skating training. It reads health and activity data from Apple Health (via an iOS Shortcut bridge) and Garmin Connect, generates adaptive weekly training plans, provides nutrition and hydration recommendations, and delivers AI-powered coaching insights via the Claude API.
 
 The app is a **Progressive Web App (PWA)** — it runs in any mobile browser (including iPhone Safari), can be pinned to the home screen for an app-like experience, and requires no App Store registration.
 
@@ -19,7 +19,7 @@ The app is a **Progressive Web App (PWA)** — it runs in any mobile browser (in
 | Data bridge | iOS Shortcut automation → HTTP POST to local API |
 | Storage | Local-first SQLite; cloud-sync-ready architecture |
 | AI | Algorithmic core + Claude API for explanations & coaching |
-| Sports | Trail running, MTB (Mountain Bike) |
+| Sports | Trail running, MTB, road biking, skiing (alpine), inline roller skating |
 | Weight training | Home gym (limited equipment) |
 | Nutrition | Macro tracking, endurance fueling, race-day plans |
 | User profile | Entered via app UI (age, sex, weight, height, etc.) |
@@ -227,7 +227,7 @@ liveliness/
 | user_id | INTEGER FK | |
 | source | TEXT | garmin / apple_health / manual |
 | external_id | TEXT | Garmin activity ID or HealthKit UUID |
-| sport | TEXT | trail_run / mtb / gym / other |
+| sport | TEXT | trail_run / mtb / road_bike / ski_alpine / inline_skate / gym / other |
 | start_time | TIMESTAMP | |
 | duration_s | INTEGER | |
 | distance_m | REAL | |
@@ -239,6 +239,8 @@ liveliness/
 | normalized_power_w | REAL | if available |
 | tss | REAL | Training Stress Score |
 | trimp | REAL | HR-based training impulse |
+| ski_vertical_m | REAL | total vertical descent (ski_alpine only) |
+| ski_runs | INTEGER | number of ski runs/descents (ski_alpine only) |
 | gpx_data | TEXT | JSON encoded route |
 | fit_file_path | TEXT | path to raw FIT file |
 | notes | TEXT | |
@@ -311,9 +313,16 @@ liveliness/
 - **Ramp Rate** = weekly change in CTL; safe range: +3 to +8 TSS/week
 
 ### TSS Calculation
-- **Cycling with power:** `TSS = (duration_s × NP × IF) / (FTP × 3600) × 100`
-- **Running rTSS (HR-based):** `hrTSS = duration_h × HR_ratio² × 100` where HR_ratio = avg_HR / LTHR
-- **Trail running penalty:** elevation-adjusted effective pace for rTSS
+
+All sports feed into the same unified ATL/CTL/TSB model. The method depends on available data:
+
+- **Cycling with power (MTB / road bike):** `TSS = (duration_s × NP × IF) / (FTP × 3600) × 100`
+- **Cycling HR-based (MTB / road bike, no power meter):** `hrTSS = duration_h × HR_ratio² × 100`
+- **Trail running rTSS (HR-based):** `hrTSS = duration_h × HR_ratio² × 100` where `HR_ratio = avg_HR / LTHR`; apply elevation penalty: effective pace adjusted by +6 s/km per 100 m/km gradient
+- **Road running rTSS:** same hrTSS formula, no elevation penalty
+- **Inline skating (HR-based):** `hrTSS = duration_h × HR_ratio² × 100` (no power meter standard)
+- **Alpine skiing (HR-based):** `hrTSS = duration_h × HR_ratio² × 100`; secondary metric: `Vertical Load Score (VLS) = (ski_vertical_m / 1000) × IF × 100` — used as a ski-specific load proxy when HR data is incomplete (e.g., cold-weather HR strap dropout)
+- **Weight training:** `wTSS` estimated from session RPE and duration: `wTSS = duration_min / 60 × RPE_factor × 50` where RPE_factor ranges 0.5 (light) to 1.5 (heavy); contributes to ATL but at reduced weight in CTL (endurance fitness)
 
 ### HR & Pace Zones (5-zone model)
 | Zone | Name | % Max HR | % Threshold HR |
@@ -343,14 +352,16 @@ Macro cycle (12–16 weeks to target race):
       └── Recovery (1–3 weeks post-race)
 ```
 
-Weekly structure (example hard week):
-- Monday: Rest / mobility
-- Tuesday: Quality run (intervals / threshold)
+Weekly structure (example hard week — winter/spring multi-sport):
+- Monday: Rest / mobility / yoga
+- Tuesday: Quality trail run (intervals / threshold) or inline skate speed work
 - Wednesday: Weight training (home gym)
-- Thursday: Easy aerobic (run or MTB)
-- Friday: Easy / rest
-- Saturday: Long trail run (progressive) or MTB
-- Sunday: Recovery ride or easy run
+- Thursday: Easy aerobic — road bike, MTB, or easy trail run
+- Friday: Easy run / rest
+- Saturday: Ski day (alpine) OR long trail run (progressive) OR long MTB
+- Sunday: Recovery — inline skate, easy road bike, or easy run
+
+The planner adapts the sport selection to season and goal: ski-heavy blocks in winter, trail/MTB peaks in spring/summer, inline skating and road biking used as cross-training year-round.
 
 ---
 
@@ -439,6 +450,41 @@ Shown on the `activities/[id]` page after tapping any activity. Charts are rende
 | **Power over Distance** | Line chart | Only if power meter connected; NP reference line |
 | **Speed Distribution** | Histogram | Distribution of speeds across the ride |
 
+#### Road Biking
+
+| Chart | Type | X-axis | Y-axis | Notes |
+|---|---|---|---|---|
+| **Route Map** | Interactive map | — | — | GPS polyline coloured by speed or power; Leaflet |
+| **Elevation Profile** | Area chart, gradient fill | Distance (km) | Elevation (m) | Indigo gradient fill |
+| **Speed over Distance** | Line chart | Distance (km) | km/h | Smoothed; max speed callout |
+| **Heart Rate over Distance** | Line chart | Distance (km) | BPM | HR zone colour bands as background |
+| **Power over Distance** | Line chart | Distance (km) | Watts | Only if power meter; NP and FTP reference lines |
+| **Cadence over Distance** | Line chart | Distance (km) | rpm | Optimal cadence band (85–95 rpm) shaded |
+| **HR Zone Distribution** | Donut chart | — | % time in zone | 5-zone colour coded |
+| **Lap / Segment Splits** | Bar chart | Lap number | Avg speed or power | Diverging from average |
+
+#### Alpine Skiing
+
+| Chart | Type | X-axis | Y-axis | Notes |
+|---|---|---|---|---|
+| **GPS Track / Piste Map** | Interactive map | — | — | GPS track overlaid on Leaflet satellite tiles; runs colour-coded by speed |
+| **Vertical Descent Profile** | Area chart | Time | Elevation (m) | Sky-blue gradient; valley markers between runs |
+| **Speed over Time** | Line chart | Time | km/h | Smoothed; peak speed annotation per run |
+| **Heart Rate over Time** | Line chart | Time | BPM | HR zone colour bands; lift-ride periods greyed out |
+| **Run-by-Run Breakdown** | Grouped bar chart | Run # | Vertical (m) + Max speed (km/h) | Side-by-side bars; fatigue trend visible across runs |
+| **HR Zone Distribution** | Donut chart | — | % time in zone | Active skiing time only (lifts excluded) |
+| **Cumulative Vertical** | Step chart | Run # | Total vertical (m) | Milestone lines at 1000 m, 2000 m, etc. |
+
+#### Inline Roller Skating
+
+| Chart | Type | X-axis | Y-axis | Notes |
+|---|---|---|---|---|
+| **Route Map** | Interactive map | — | — | GPS polyline coloured by speed; Leaflet |
+| **Speed over Distance** | Line chart | Distance (km) | km/h | Smoothed; max speed callout; pink gradient fill |
+| **Heart Rate over Distance** | Line chart | Distance (km) | BPM | HR zone colour bands as background |
+| **Elevation Profile** | Area chart, gradient fill | Distance (km) | Elevation (m) | Useful even on mostly-flat routes |
+| **HR Zone Distribution** | Donut chart | — | % time in zone | 5-zone colour coded |
+
 #### Weight Training Session
 
 | Chart | Type | Notes |
@@ -454,9 +500,10 @@ Time range picker: last 4 weeks / 8 weeks / 12 weeks / custom.
 
 | Chart | Type | Description |
 |---|---|---|
-| **Weekly Distance by Sport** | Stacked area chart | Trail run (teal) + MTB (amber) + other stacked; smooth weekly totals |
-| **Weekly Elevation Gain** | Bar chart | Total vertical per week; reference line for weekly elevation goal |
-| **Weekly Training Hours** | Bar chart | Hours by sport, stacked; planned vs actual overlay (dashed line) |
+| **Weekly Distance by Sport** | Stacked area chart | Trail run (teal) + MTB (amber) + road bike (indigo) + inline skate (pink) stacked; skiing shown as vertical metres (separate axis) since descents don't translate to distance |
+| **Weekly Ski Vertical** | Bar chart | Total ski descent metres per week (ski season only; hidden off-season) |
+| **Weekly Elevation Gain** | Bar chart | Total ascent per week across all outdoor sports; reference line for weekly elevation goal |
+| **Weekly Training Hours** | Bar chart | Hours by sport, stacked (all 6 sports); planned vs actual overlay (dashed line) |
 | **Weekly TSS** | Bar + line combo | Bars = weekly TSS; lines = CTL (fitness) and ATL (fatigue) overlaid |
 | **Weekly Zone Balance** | 100% stacked bar | % of time in each HR zone per week; shows aerobic/intensity ratio |
 | **Average Pace Trend** | Line chart | Rolling 4-week average pace for easy runs and threshold runs separately |
@@ -471,7 +518,7 @@ Time range picker: last 3 months / 6 months / 12 months / all time.
 
 | Chart | Type | Description |
 |---|---|---|
-| **Monthly Volume (Distance)** | Area chart | Separate lines for trail run and MTB; gradient fills |
+| **Monthly Volume (Distance)** | Area chart | Separate lines per sport (trail run, MTB, road bike, inline skate); gradient fills; skiing shown as separate vertical-metres chart |
 | **Monthly Volume (Hours)** | Area chart | Total training hours per month |
 | **Monthly Elevation** | Bar chart | Total elevation gain per month |
 | **Monthly TSS** | Bar chart | Total monthly training stress; trend line |
@@ -488,10 +535,10 @@ Time range picker: last 3 months / 6 months / 12 months / all time.
 
 | Chart | Type | Description |
 |---|---|---|
-| **Annual Activity Heatmap** | Calendar heatmap (Nivo) | GitHub-style; colour intensity = TSS; trail run and MTB shown as different hues |
+| **Annual Activity Heatmap** | Calendar heatmap (Nivo) | GitHub-style; colour intensity = TSS; each sport shown in its own hue (teal = trail run, amber = MTB, indigo = road bike, sky = ski, pink = inline skate, violet = gym) |
 | **Cumulative Distance** | Area chart | All-time cumulative km by sport; milestone markers (500 km, 1000 km, etc.) |
 | **VO2max Trend** | Line chart | Garmin-estimated VO2max over time; rolling improvement |
-| **Personal Records Table** | Table + sparkline | PRs for 1 km, 5 km, 10 km, half-marathon, marathon distance; date + activity link |
+| **Personal Records Table** | Table + sparkline | Sport-specific PRs: running (1 km, 5 km, 10 km, half, marathon), cycling/inline skate (fastest 10 km, 20 km, 50 km, 1-hour power), skiing (most vertical in a day, fastest run speed); date + activity link |
 | **Biggest Weeks / Months** | Ranked bar chart | Top 10 highest-TSS weeks and months all-time |
 | **Fitness Radar** | Radar chart (Nivo) | Spider: Endurance / Speed / Strength / Recovery / Consistency / Elevation — scored 0–100 vs personal historical average |
 | **Year-over-Year Comparison** | Grouped line chart | Monthly volume for each calendar year overlaid; shows improvement trajectory |
@@ -502,14 +549,22 @@ Time range picker: last 3 months / 6 months / 12 months / all time.
 
 All charts follow a unified visual language:
 
-- **Colour palette:**
+- **Colour palette — HR zones:**
   - Zone 1: `#94a3b8` (slate)
   - Zone 2: `#22d3ee` (cyan)
   - Zone 3: `#a3e635` (lime)
   - Zone 4: `#fb923c` (orange)
   - Zone 5: `#f43f5e` (rose)
-  - Trail run series: `#0d9488` (teal)
-  - MTB series: `#d97706` (amber)
+
+- **Colour palette — sports:**
+  - Trail run: `#0d9488` (teal)
+  - MTB: `#d97706` (amber)
+  - Road bike: `#6366f1` (indigo)
+  - Alpine skiing: `#38bdf8` (sky blue — evokes snow/ice)
+  - Inline skating: `#f472b6` (pink)
+  - Weight training: `#a855f7` (violet)
+
+- **Colour palette — training load:**
   - CTL (fitness): `#6366f1` (indigo)
   - ATL (fatigue): `#f43f5e` (rose)
   - TSB (form): `#10b981` (emerald, positive) / `#f43f5e` (rose, negative)
@@ -670,6 +725,22 @@ The Shortcut POSTs the following JSON structure to `/api/health/sync`:
 }
 ```
 
+### HealthKit Workout Type → App Sport Mapping
+
+The backend normalises incoming HealthKit workout type strings to the app's internal sport enum:
+
+| HealthKit `workoutActivityType` | App `sport` value |
+|---|---|
+| `TrailRunning`, `Running`, `CrossCountryRunning` | `trail_run` |
+| `Cycling` (road) | `road_bike` |
+| `MountainBiking` | `mtb` |
+| `DownhillSkiing`, `Skiing` | `ski_alpine` |
+| `SkatingSports`, `RollerSkating` | `inline_skate` |
+| `TraditionalStrengthTraining`, `FunctionalStrengthTraining` | `gym` |
+| anything else | `other` |
+
+The mapping is configurable in `config.py` so future workout types can be added without code changes.
+
 The Shortcut requires iOS 16+ (HealthKit actions with multiple sample types are available from iOS 16).
 
 ---
@@ -710,4 +781,4 @@ docker compose up
 
 ## Summary
 
-The Liveliness app is a privacy-first, AI-augmented personal coaching platform purpose-built for trail running and MTB athletes. It integrates seamlessly with existing devices (Garmin Fenix 6, iPhone) without requiring any native iOS app, using a clever iOS Shortcut as a data bridge. The algorithmic engine follows established endurance sports science (PMC, periodization, sport nutrition), while Claude API provides the human-readable coaching layer that makes the data actionable and understandable.
+The Liveliness app is a privacy-first, AI-augmented personal coaching platform purpose-built for trail running, MTB, road biking, skiing, and inline roller skating athletes. It integrates seamlessly with existing devices (Garmin Fenix 6, iPhone) without requiring any native iOS app, using a clever iOS Shortcut as a data bridge. Each sport has its own tailored metrics, chart set, and TSS method, while all activities feed into a unified ATL/CTL/TSB performance model. The algorithmic engine follows established endurance sports science (PMC, periodization, sport nutrition), while Claude API provides the human-readable coaching layer that makes the data actionable and understandable across a full multi-sport training year.
