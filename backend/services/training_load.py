@@ -14,6 +14,11 @@ if TYPE_CHECKING:
     from models.activity import Activity
     from models.health_metrics import HealthMetrics
     from models.user import User
+    from models.weight_session import WeightSession
+
+# wTSS reduction factor for CTL: weight training develops less endurance fitness
+# than aerobic work, so it contributes at half weight to the 42-day chronic load.
+_WTSS_CTL_FACTOR = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -93,27 +98,54 @@ def compute_pmc(
     activities: list["Activity"],
     user: "User",
     days: int = 120,
+    weight_sessions: "list[WeightSession] | None" = None,
 ) -> list[dict[str, Any]]:
     """Compute CTL, ATL, TSB series using the Banister impulse-response model.
+
+    Weight sessions contribute their wTSS to ATL at full weight and to CTL at
+    _WTSS_CTL_FACTOR (0.5×), because strength training develops less aerobic
+    fitness than endurance work.
 
     Returns a list of dicts (one per calendar day for the last *days* days),
     ordered ascending by date.
     """
+    from services.weight_training import calculate_wtss
+
     today = datetime.date.today()
     window_start = today - datetime.timedelta(days=days - 1)
 
-    if not activities:
-        return []
-
-    # Build daily TSS totals
+    # Build daily endurance TSS totals
     daily_tss: dict[datetime.date, float] = defaultdict(float)
     for act in activities:
         if act.start_time is not None:
             daily_tss[act.start_time.date()] += estimate_tss(act, user)
 
+    # Build daily wTSS from weight sessions
+    daily_wtss: dict[datetime.date, float] = defaultdict(float)
+    for ws in weight_sessions or []:
+        if ws.date is None:
+            continue
+        exercises = []
+        if ws.exercises:
+            try:
+                exercises = __import__("json").loads(ws.exercises)
+            except (ValueError, TypeError):
+                pass
+        if ws.duration_min and exercises:
+            rpes = [e.get("rpe") for e in exercises if isinstance(e.get("rpe"), (int, float))]
+            avg_rpe = sum(rpes) / len(rpes) if rpes else 6.0
+            daily_wtss[ws.date] += calculate_wtss(ws.duration_min, avg_rpe)
+        elif ws.duration_min:
+            # No exercise data — use default moderate RPE
+            daily_wtss[ws.date] += calculate_wtss(ws.duration_min, 6.0)
+
+    all_dates = list(daily_tss.keys()) + list(daily_wtss.keys())
+    if not all_dates:
+        return []
+
     # Go back far enough that CTL is well-seeded before the display window
     compute_start = min(
-        min(daily_tss.keys()),
+        min(all_dates),
         window_start - datetime.timedelta(days=84),  # 2 × 42-day CTL constant
     )
 
@@ -123,10 +155,22 @@ def compute_pmc(
 
     current = compute_start
     while current <= today:
-        tss_today = daily_tss.get(current, 0.0)
+        endurance_tss = daily_tss.get(current, 0.0)
+        wtss = daily_wtss.get(current, 0.0)
+
+        # Combined TSS for the day (what's displayed)
+        tss_today = endurance_tss + wtss
+
         tsb = ctl - atl  # form = yesterday's fitness minus yesterday's fatigue
-        ctl = ctl + (tss_today - ctl) / 42.0
-        atl = atl + (tss_today - atl) / 7.0
+
+        # ATL: full weight for all training stress
+        atl_tss = endurance_tss + wtss
+        # CTL: endurance at full weight, strength at reduced weight
+        ctl_tss = endurance_tss + wtss * _WTSS_CTL_FACTOR
+
+        ctl = ctl + (ctl_tss - ctl) / 42.0
+        atl = atl + (atl_tss - atl) / 7.0
+
         if current >= window_start:
             result.append(
                 {

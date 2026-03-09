@@ -13,6 +13,7 @@ from database import get_db
 from models.activity import Activity
 from models.health_metrics import HealthMetrics
 from models.user import User
+from models.weight_session import WeightSession
 from services.training_load import (
     compute_alltime,
     compute_monthly,
@@ -129,7 +130,9 @@ async def performance_management_chart(
     if user is None:
         return []
     acts = await _get_all_activities(db)
-    return compute_pmc(acts, user, days=days)
+    ws_result = await db.execute(select(WeightSession).order_by(WeightSession.date.asc()))
+    weight_sessions = list(ws_result.scalars().all())
+    return compute_pmc(acts, user, days=days, weight_sessions=weight_sessions)
 
 
 @router.get("/activity/{activity_id}/streams")

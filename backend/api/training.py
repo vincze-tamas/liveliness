@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models.activity import Activity
+from models.weight_session import WeightSession
 from models.training_plan import (
     RaceGoal,
     RaceGoalCreate,
@@ -152,12 +153,14 @@ async def generate_training_plan(db: AsyncSession = Depends(get_db)) -> Training
         primary_sport = "trail_run"
         goal_description = "General training — no race goal set"
 
-    # 4. Compute current CTL from all activities
+    # 4. Compute current CTL from all activities + weight sessions
     act_result = await db.execute(
         select(Activity).order_by(Activity.start_time.asc())
     )
     activities = list(act_result.scalars().all())
-    pmc_series = compute_pmc(activities, user, days=120)
+    ws_result = await db.execute(select(WeightSession).order_by(WeightSession.date.asc()))
+    weight_sessions = list(ws_result.scalars().all())
+    pmc_series = compute_pmc(activities, user, days=120, weight_sessions=weight_sessions)
     ctl = pmc_series[-1]["ctl"] if pmc_series else 30.0
 
     # 5. Generate the weekly session list
