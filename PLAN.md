@@ -650,6 +650,8 @@ All endpoints return pre-aggregated data — no heavy computation on the fronten
 - [ ] Endurance fueling calculator (per-hour carbs/fluids)
 - [ ] Race nutrition planner (aid station strategy)
 - [ ] Nutrition overview dashboard
+- [ ] `food_log` table: id, user_id, date, meal_type (breakfast/lunch/dinner/snack), food_description, calories, protein_g, carbs_g, fat_g, source (`manual`/`photo`), image_path, created_at
+- [ ] Manual food entry UI — name + macros form; daily totals vs. TDEE/macro targets on nutrition page
 
 ### Phase 6 — Weight Training (Week 6–7)
 - [ ] Home gym exercise library
@@ -664,6 +666,8 @@ All endpoints return pre-aggregated data — no heavy computation on the fronten
 - [ ] Post-activity debrief generation
 - [ ] Weekly plan narrative generation
 - [ ] Contextual nutrition advice
+- [ ] Photo food recognition: `POST /api/nutrition/log/photo` — multipart image upload → Claude Vision identifies foods and estimates portions → returns structured macros (calories/protein/carbs/fat) → saves to `food_log` with `source=photo`
+- [ ] Camera capture UI: mobile-native `<input capture="environment">`, photo preview, editable interpretation screen (user can correct Claude's estimate before confirming), daily intake update
 
 ### Phase 8 — PWA & Polish (Week 8–9)
 - [ ] PWA manifest and service worker (next-pwa)
