@@ -16,6 +16,14 @@ import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/dashboard/StatCard'
 
 export default function DashboardPage() {
+  const today = new Date()
+  const formattedDate = today.toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+
   return (
     <div className="px-4 py-5 space-y-4 max-w-2xl mx-auto">
       {/* Greeting */}
@@ -24,7 +32,7 @@ export default function DashboardPage() {
           Good morning 👋
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          Monday, 9 March 2026
+          {formattedDate}
         </p>
       </div>
 

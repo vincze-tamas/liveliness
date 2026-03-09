@@ -146,24 +146,31 @@ async def sync_garmin(
     # ------------------------------------------------------------------ #
     # Daily health stats: steps, body battery, resting HR, HRV, sleep    #
     # ------------------------------------------------------------------ #
+    # Cache metrics objects by date so multiple data sources for the same
+    # day all update the same ORM object without duplicate INSERT attempts.
+    metrics_cache: dict[datetime.date, HealthMetrics] = {}
+
+    async def _get_or_init_metrics(date: datetime.date) -> HealthMetrics:
+        if date in metrics_cache:
+            return metrics_cache[date]
+        r = await db.execute(
+            select(HealthMetrics).where(
+                HealthMetrics.user_id == user.id,
+                HealthMetrics.date == date,
+            )
+        )
+        m = r.scalar_one_or_none()
+        if m is None:
+            m = HealthMetrics(user_id=user.id, date=date, source="garmin")
+            db.add(m)
+            nonlocal metrics_upserted
+            metrics_upserted += 1
+        metrics_cache[date] = m
+        return m
+
     current = start_date
     while current <= today:
         date_str = current.isoformat()
-
-        async def _get_or_init_metrics(date: datetime.date) -> HealthMetrics:
-            r = await db.execute(
-                select(HealthMetrics).where(
-                    HealthMetrics.user_id == user.id,
-                    HealthMetrics.date == date,
-                )
-            )
-            m = r.scalar_one_or_none()
-            if m is None:
-                m = HealthMetrics(user_id=user.id, date=date, source="garmin")
-                db.add(m)
-                nonlocal metrics_upserted
-                metrics_upserted += 1
-            return m
 
         # Daily stats (steps, active kcal, resting HR, body battery)
         try:
