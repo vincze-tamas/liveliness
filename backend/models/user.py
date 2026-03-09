@@ -24,6 +24,7 @@ class User(Base):
     ftp_running_pace_s_per_km: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ftp_cycling_w: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     lthr: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    activity_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # sedentary/light/moderate/active/very_active
     garmin_username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     garmin_password: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
@@ -39,6 +40,7 @@ class UserCreate(BaseModel):
     birth_date: Optional[datetime.date] = None
     weight_kg: Optional[float] = None
     height_cm: Optional[float] = None
+    activity_level: Optional[str] = None
     max_hr: Optional[int] = None
     resting_hr: Optional[int] = None
     vo2max: Optional[float] = None
@@ -56,6 +58,7 @@ class UserUpdate(BaseModel):
     birth_date: Optional[datetime.date] = None
     weight_kg: Optional[float] = None
     height_cm: Optional[float] = None
+    activity_level: Optional[str] = None
     max_hr: Optional[int] = None
     resting_hr: Optional[int] = None
     vo2max: Optional[float] = None
@@ -74,6 +77,7 @@ class UserRead(BaseModel):
     birth_date: Optional[datetime.date] = None
     weight_kg: Optional[float] = None
     height_cm: Optional[float] = None
+    activity_level: Optional[str] = None
     max_hr: Optional[int] = None
     resting_hr: Optional[int] = None
     vo2max: Optional[float] = None
