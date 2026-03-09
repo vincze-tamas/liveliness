@@ -63,10 +63,16 @@ def estimate_tss(activity: "Activity", user: "User") -> float:
         return duration_h * intensity_factor ** 2 * 100
 
     # 3. HR-based TRIMP (Banister model), normalised to TSS scale
-    rhr = user.resting_hr or 50
-    mhr = user.max_hr or 190
-    hr_range = mhr - rhr
-    if activity.avg_hr and hr_range > 0:
+    # Only enter this branch when the user's HR thresholds are explicitly set;
+    # silently falling back to synthetic defaults (50/190) produces wrong TSS.
+    if (
+        activity.avg_hr
+        and user.resting_hr
+        and user.max_hr
+        and user.max_hr > user.resting_hr
+    ):
+        rhr = user.resting_hr
+        hr_range = user.max_hr - rhr
         hrr = max(0.0, min(1.0, (activity.avg_hr - rhr) / hr_range))
         duration_min = duration_s / 60.0
         trimp = duration_min * hrr * 0.64 * math.exp(1.92 * hrr)
@@ -97,16 +103,7 @@ def compute_pmc(
     window_start = today - datetime.timedelta(days=days - 1)
 
     if not activities:
-        return [
-            {
-                "date": (today - datetime.timedelta(days=days - 1 - i)).isoformat(),
-                "tss": 0.0,
-                "ctl": 0.0,
-                "atl": 0.0,
-                "tsb": 0.0,
-            }
-            for i in range(days)
-        ]
+        return []
 
     # Build daily TSS totals
     daily_tss: dict[datetime.date, float] = defaultdict(float)

@@ -20,6 +20,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { apiFetch } from '@/lib/api'
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart'
 import { cn } from '@/lib/utils'
 
 type Range = '3M' | '6M' | '12M'
@@ -49,13 +50,6 @@ const SPORT_COLORS: Record<string, string> = {
   other: '#94a3b8',
 }
 
-const TOOLTIP_STYLE = {
-  backgroundColor: '#1e293b',
-  border: 'none',
-  borderRadius: 8,
-  fontSize: 12,
-  color: '#f1f5f9',
-}
 
 export default function MonthlyStatsPage() {
   const [activeRange, setActiveRange] = useState<Range>('6M')
@@ -69,7 +63,7 @@ export default function MonthlyStatsPage() {
   const data = allData ? allData.slice(-months) : []
   const chartData = data.map((m) => ({
     ...m,
-    label: new Date(m.month + '-01').toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
+    label: new Date(m.month + '-01T12:00:00').toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }),
   }))
   const hasData = chartData.some((m) => m.activity_count > 0)
 
@@ -147,7 +141,7 @@ export default function MonthlyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="distance_km" fill="#0d9488" radius={[4, 4, 0, 0]} name="Distance (km)" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -164,7 +158,7 @@ export default function MonthlyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="elevation_m" fill="#0ea5e9" radius={[4, 4, 0, 0]} name="Elevation (m)" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -181,7 +175,7 @@ export default function MonthlyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="duration_h" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Hours" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -198,7 +192,7 @@ export default function MonthlyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="tss" fill="#f59e0b" radius={[4, 4, 0, 0]} name="TSS" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -221,11 +215,11 @@ export default function MonthlyStatsPage() {
                       outerRadius={72}
                       innerRadius={36}
                     >
-                      {pieData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
+                      {pieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [`${v} km`]} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} formatter={(v: number) => [`${v} km`]} />
                     <Legend
                       iconType="circle"
                       iconSize={8}

@@ -18,6 +18,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { apiFetch } from '@/lib/api'
+import { formatShortDate } from '@/lib/format'
+import { CHART_TOOLTIP_STYLE } from '@/lib/chart'
 import { cn } from '@/lib/utils'
 
 type Range = '4W' | '8W' | '12W'
@@ -38,17 +40,6 @@ interface WeekSummary {
   avg_resting_hr: number | null
 }
 
-function shortWeek(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
-}
-
-const TOOLTIP_STYLE = {
-  backgroundColor: '#1e293b',
-  border: 'none',
-  borderRadius: 8,
-  fontSize: 12,
-  color: '#f1f5f9',
-}
 
 export default function WeeklyStatsPage() {
   const [activeRange, setActiveRange] = useState<Range>('8W')
@@ -60,7 +51,7 @@ export default function WeeklyStatsPage() {
   })
 
   const data = allData ? allData.slice(-weeks) : []
-  const chartData = data.map((w) => ({ ...w, label: shortWeek(w.week_start) }))
+  const chartData = data.map((w) => ({ ...w, label: formatShortDate(w.week_start) }))
   const hasData = chartData.some((w) => w.activity_count > 0)
   const hasHrv = chartData.some((w) => w.avg_hrv != null)
 
@@ -122,7 +113,7 @@ export default function WeeklyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="distance_km" fill="#0d9488" radius={[4, 4, 0, 0]} name="Distance (km)" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -139,7 +130,7 @@ export default function WeeklyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="elevation_m" fill="#0ea5e9" radius={[4, 4, 0, 0]} name="Elevation (m)" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -156,7 +147,7 @@ export default function WeeklyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="duration_h" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Hours" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -173,7 +164,7 @@ export default function WeeklyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                     <Bar dataKey="tss" fill="#f59e0b" radius={[4, 4, 0, 0]} name="TSS" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -190,7 +181,7 @@ export default function WeeklyStatsPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.3} />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                     <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
                     <Line
                       type="monotone"
                       dataKey="avg_hrv"

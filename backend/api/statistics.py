@@ -2,6 +2,7 @@ import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,55 @@ from services.training_load import (
     compute_pmc,
     compute_weekly,
 )
+
+
+class WeekSummary(BaseModel):
+    week_start: str
+    activity_count: int
+    distance_km: float
+    elevation_m: int
+    duration_h: float
+    tss: float
+    sport_distance_km: dict[str, float]
+    avg_hrv: float | None
+    avg_resting_hr: int | None
+
+
+class MonthSummary(BaseModel):
+    month: str
+    activity_count: int
+    distance_km: float
+    elevation_m: int
+    duration_h: float
+    tss: float
+    sport_distance_km: dict[str, float]
+
+
+class PmcPoint(BaseModel):
+    date: str
+    tss: float
+    ctl: float
+    atl: float
+    tsb: float
+
+
+class SportStats(BaseModel):
+    count: int
+    distance_km: float
+    elevation_m: int
+    duration_h: float
+
+
+class AlltimeSummary(BaseModel):
+    total_activities: int
+    total_distance_km: float
+    total_elevation_m: int
+    total_duration_h: float
+    sport_stats: dict[str, SportStats]
+    first_activity_date: str | None
+    last_activity_date: str | None
+    longest_activity_h: float
+    most_elevation_m: int
 
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
@@ -33,7 +83,7 @@ async def _get_all_activities(db: AsyncSession) -> list[Activity]:
 async def weekly_statistics(
     weeks: int = 12,
     db: AsyncSession = Depends(get_db),
-) -> list[Any]:
+) -> list[WeekSummary]:
     user = await _get_user(db)
     if user is None:
         return []
@@ -52,7 +102,7 @@ async def weekly_statistics(
 async def monthly_statistics(
     months: int = 12,
     db: AsyncSession = Depends(get_db),
-) -> list[Any]:
+) -> list[MonthSummary]:
     user = await _get_user(db)
     if user is None:
         return []
@@ -61,7 +111,7 @@ async def monthly_statistics(
 
 
 @router.get("/alltime")
-async def alltime_statistics(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+async def alltime_statistics(db: AsyncSession = Depends(get_db)) -> AlltimeSummary:
     acts = await _get_all_activities(db)
     return compute_alltime(acts)
 
@@ -70,7 +120,7 @@ async def alltime_statistics(db: AsyncSession = Depends(get_db)) -> dict[str, An
 async def performance_management_chart(
     days: int = 120,
     db: AsyncSession = Depends(get_db),
-) -> list[Any]:
+) -> list[PmcPoint]:
     user = await _get_user(db)
     if user is None:
         return []

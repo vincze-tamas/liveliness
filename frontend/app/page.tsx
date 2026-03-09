@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { SportBadge, type SportType } from '@/components/activities/SportBadge'
 import { apiFetch } from '@/lib/api'
@@ -65,7 +66,7 @@ export default function DashboardPage() {
     year: 'numeric',
   })
 
-  const { data: todayMetrics } = useQuery<HealthMetrics>({
+  const { data: todayMetrics, isLoading: metricsLoading } = useQuery<HealthMetrics>({
     queryKey: ['health-metrics-today'],
     queryFn: () => apiFetch<HealthMetrics>('/api/health/metrics/today'),
     retry: false,
@@ -81,7 +82,7 @@ export default function DashboardPage() {
     queryFn: () => apiFetch<WeekSummary[]>('/api/statistics/weekly?weeks=2'),
   })
 
-  const { data: recentActivities } = useQuery<ActivityRead[]>({
+  const { data: recentActivities, isLoading: activitiesLoading } = useQuery<ActivityRead[]>({
     queryKey: ['activities-recent'],
     queryFn: () => apiFetch<ActivityRead[]>('/api/activities?limit=5'),
   })
@@ -110,40 +111,48 @@ export default function DashboardPage() {
           <CardTitle>Today&apos;s Overview</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            <StatCard
-              icon={<Activity className="w-4 h-4" />}
-              label="HRV"
-              value={todayMetrics?.hrv_ms != null ? Math.round(todayMetrics.hrv_ms) : '—'}
-              unit="ms"
-              trend="neutral"
-            />
-            <StatCard
-              icon={<Heart className="w-4 h-4" />}
-              label="Resting HR"
-              value={todayMetrics?.resting_hr ?? '—'}
-              unit="bpm"
-              trend="neutral"
-            />
-            <StatCard
-              icon={<Scale className="w-4 h-4" />}
-              label="Weight"
-              value={todayMetrics?.weight_kg != null ? todayMetrics.weight_kg.toFixed(1) : '—'}
-              unit="kg"
-              trend="neutral"
-            />
-            <StatCard
-              icon={<Moon className="w-4 h-4" />}
-              label="Sleep"
-              value={todayMetrics?.sleep_hours != null ? todayMetrics.sleep_hours.toFixed(1) : '—'}
-              unit="h"
-              trend="neutral"
-            />
-          </div>
-          {!todayMetrics && (
-            <p className="mt-3 text-xs text-slate-400 dark:text-slate-500 text-center">
-              Sync Garmin or Apple Health to see your data
-            </p>
+          {metricsLoading ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard
+                  icon={<Activity className="w-4 h-4" />}
+                  label="HRV"
+                  value={todayMetrics?.hrv_ms != null ? Math.round(todayMetrics.hrv_ms) : '—'}
+                  unit="ms"
+                  trend="neutral"
+                />
+                <StatCard
+                  icon={<Heart className="w-4 h-4" />}
+                  label="Resting HR"
+                  value={todayMetrics?.resting_hr ?? '—'}
+                  unit="bpm"
+                  trend="neutral"
+                />
+                <StatCard
+                  icon={<Scale className="w-4 h-4" />}
+                  label="Weight"
+                  value={todayMetrics?.weight_kg != null ? todayMetrics.weight_kg.toFixed(1) : '—'}
+                  unit="kg"
+                  trend="neutral"
+                />
+                <StatCard
+                  icon={<Moon className="w-4 h-4" />}
+                  label="Sleep"
+                  value={todayMetrics?.sleep_hours != null ? todayMetrics.sleep_hours.toFixed(1) : '—'}
+                  unit="h"
+                  trend="neutral"
+                />
+              </div>
+              {!todayMetrics && (
+                <p className="mt-3 text-xs text-slate-400 dark:text-slate-500 text-center">
+                  Sync Garmin or Apple Health to see your data
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -250,7 +259,12 @@ export default function DashboardPage() {
           )}
         </CardHeader>
         <CardContent>
-          {hasActivities ? (
+          {activitiesLoading && (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+            </div>
+          )}
+          {!activitiesLoading && hasActivities && (
             <div className="divide-y divide-slate-100 dark:divide-slate-700 -mx-6 px-6">
               {recentActivities!.map((act) => (
                 <Link
@@ -283,7 +297,8 @@ export default function DashboardPage() {
                 </Link>
               ))}
             </div>
-          ) : (
+          )}
+          {!activitiesLoading && !hasActivities && (
             <div className="flex flex-col items-center gap-3 py-2">
               <div className="flex items-center justify-center w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700">
                 <Activity className="w-6 h-6 text-slate-400 dark:text-slate-500" />

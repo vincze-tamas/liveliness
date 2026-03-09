@@ -124,7 +124,14 @@ export default function ActivityDetailPage({ params }: Props) {
       )}
 
       {/* Details Grid */}
-      {activity && (
+      {activity && (() => {
+        const hasMetrics = [
+          activity.avg_hr, activity.max_hr, activity.avg_pace_s_per_km,
+          activity.avg_speed_kmh, activity.avg_power_w, activity.normalized_power_w,
+          activity.tss, activity.ski_vertical_m, activity.ski_runs, activity.notes,
+        ].some((v) => v != null)
+        if (!hasMetrics) return null
+        return (
         <Card>
           <CardHeader>
             <CardTitle>Details</CardTitle>
@@ -236,7 +243,8 @@ export default function ActivityDetailPage({ params }: Props) {
             )}
           </CardContent>
         </Card>
-      )}
+        )
+      })()}
 
       {/* Charts placeholder — Phase 3.5 */}
       {activity && (
