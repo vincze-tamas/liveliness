@@ -240,7 +240,9 @@ export default function DashboardPage() {
             <p className="text-sm text-slate-500 dark:text-slate-400 text-center">
               No plan generated yet
             </p>
-            <Button size="sm">Generate Plan</Button>
+            <Link href="/training">
+              <Button size="sm">Generate Plan</Button>
+            </Link>
           </div>
         </CardContent>
       </Card>
