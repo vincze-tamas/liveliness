@@ -10,9 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import Link from 'next/link'
-import { apiFetch } from '@/lib/api'
-
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
+import { apiFetch, API_BASE } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -169,7 +167,7 @@ function PhotoFoodForm({ userId, onAdded }: PhotoFoodFormProps) {
     try {
       const formData = new FormData()
       formData.append('image', file)
-      const res = await fetch(`${BASE}/api/nutrition/analyze-photo`, {
+      const res = await fetch(`${API_BASE}/api/nutrition/analyze-photo`, {
         method: 'POST',
         body: formData,
       })

@@ -16,7 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SportBadge, type SportType } from '@/components/activities/SportBadge'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, isAiUnavailable } from '@/lib/api'
 import { formatDuration, formatDistance, formatPace, formatLongDate } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 
@@ -97,12 +97,6 @@ export default function ActivityDetailPage({ params }: Props) {
     return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`
   }
 
-  const fmtPaceAxis = (s: number) => {
-    const mm = Math.floor(s / 60)
-    const ss = String(Math.round(s % 60)).padStart(2, '0')
-    return `${mm}:${ss}`
-  }
-
   async function handleDebrief() {
     setDebriefLoading(true)
     setDebriefError(null)
@@ -113,7 +107,7 @@ export default function ActivityDetailPage({ params }: Props) {
       setDebrief(data.debrief)
     } catch (err) {
       setDebriefError(
-        err instanceof Error && err.message.includes('503')
+        isAiUnavailable(err)
           ? 'AI coaching unavailable — check ANTHROPIC_API_KEY.'
           : 'Failed to generate debrief. Try again.'
       )
@@ -411,8 +405,8 @@ export default function ActivityDetailPage({ params }: Props) {
                   <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-slate-200 dark:stroke-slate-700" />
                     <XAxis dataKey="t" tickFormatter={fmtElapsed} tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                    <YAxis tick={{ fontSize: 10 }} width={36} tickFormatter={fmtPaceAxis} domain={['auto', 'auto']} reversed />
-                    <Tooltip labelFormatter={(v) => fmtElapsed(v as number)} formatter={(v: unknown) => [fmtPaceAxis(v as number), 'Pace']} />
+                    <YAxis tick={{ fontSize: 10 }} width={36} tickFormatter={formatPace} domain={['auto', 'auto']} reversed />
+                    <Tooltip labelFormatter={(v) => fmtElapsed(v as number)} formatter={(v: unknown) => [formatPace(v as number), 'Pace']} />
                     <Line type="monotone" dataKey="pace" dot={false} stroke="#14b8a6" strokeWidth={1.5} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>

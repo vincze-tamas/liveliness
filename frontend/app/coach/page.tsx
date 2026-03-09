@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Send, Bot, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, isAiUnavailable } from '@/lib/api'
 
 interface Message {
   id: string
@@ -65,7 +65,7 @@ export default function CoachPage() {
         id: nextId(),
         role: 'assistant',
         content:
-          err instanceof Error && err.message.includes('503')
+          isAiUnavailable(err)
             ? 'AI coaching is unavailable — please set your ANTHROPIC_API_KEY on the server.'
             : 'Sorry, something went wrong. Please try again.',
       }
