@@ -76,11 +76,13 @@ The app is a **Progressive Web App (PWA)** — it runs in any mobile browser (in
 ### Frontend — Next.js 14 PWA
 - **Framework:** Next.js 14 (App Router, TypeScript)
 - **UI Components:** shadcn/ui + Tailwind CSS (polished, accessible, mobile-first)
-- **Charts:** Recharts (training load curves, activity charts, nutrition graphs)
+- **Charts (primary):** Recharts — lightweight, React-native, excellent mobile touch support; used for all statistics graphs with custom gradients, smooth curves, and branded colour palettes
+- **Charts (supplementary):** Nivo — used specifically for the zone distribution donut charts, activity heatmap calendar, and radar charts where Recharts falls short aesthetically
 - **Data fetching:** TanStack Query (React Query)
 - **PWA:** next-pwa (service worker, offline support, installable)
-- **Maps:** Leaflet / react-leaflet (activity route display)
+- **Maps:** Leaflet / react-leaflet (activity route display with elevation-coloured polylines)
 - **Icons:** Lucide React
+- **Animations:** Framer Motion (chart entrance animations, stat counters)
 
 ### Backend — Python FastAPI
 - **Framework:** FastAPI (async, OpenAPI docs built-in)
@@ -121,6 +123,7 @@ liveliness/
 │   │   ├── nutrition.py             # Nutrition endpoints
 │   │   ├── weight_training.py       # Weight training endpoints
 │   │   ├── ai_coach.py              # Claude API chat & coaching
+│   │   ├── statistics.py            # Statistics & aggregation endpoints
 │   │   └── profile.py               # User profile management
 │   ├── services/                    # Business logic
 │   │   ├── apple_health_parser.py   # Parse Apple Health XML export
@@ -128,6 +131,7 @@ liveliness/
 │   │   ├── training_load.py         # ATL, CTL, TSB, Ramp Rate
 │   │   ├── zone_calculator.py       # HR zones, pace zones, power zones
 │   │   ├── tss_calculator.py        # TSS, hrTSS, rTSS calculations
+│   │   ├── statistics_service.py    # Aggregation queries for all chart data
 │   │   ├── planner.py               # Weekly training plan generation
 │   │   ├── periodization.py         # Macro cycles: Base/Build/Peak/Race
 │   │   ├── nutrition_engine.py      # BMR, TDEE, macros, fueling
@@ -141,7 +145,12 @@ liveliness/
 │   │   ├── page.tsx                 # Dashboard (home)
 │   │   ├── activities/
 │   │   │   ├── page.tsx             # Activity list
-│   │   │   └── [id]/page.tsx        # Activity detail
+│   │   │   └── [id]/page.tsx        # Activity detail + per-activity graphs
+│   │   ├── statistics/
+│   │   │   ├── page.tsx             # Statistics hub (weekly / monthly / all-time)
+│   │   │   ├── weekly/page.tsx      # Weekly trend graphs
+│   │   │   ├── monthly/page.tsx     # Monthly trend graphs
+│   │   │   └── alltime/page.tsx     # Long-term / all-time records & heatmap
 │   │   ├── training/
 │   │   │   ├── page.tsx             # Training plan overview
 │   │   │   └── week/page.tsx        # Current week plan
@@ -156,7 +165,22 @@ liveliness/
 │   │       └── page.tsx             # User profile & settings
 │   ├── components/
 │   │   ├── dashboard/               # Dashboard widgets
-│   │   ├── charts/                  # Recharts wrappers
+│   │   ├── charts/                  # Recharts & Nivo wrappers
+│   │   │   ├── ElevationProfileChart.tsx
+│   │   │   ├── HeartRateChart.tsx
+│   │   │   ├── PaceChart.tsx
+│   │   │   ├── ZoneDonutChart.tsx
+│   │   │   ├── PmcChart.tsx         # ATL/CTL/TSB performance management
+│   │   │   ├── WeeklyVolumeChart.tsx
+│   │   │   ├── MonthlyTrendChart.tsx
+│   │   │   ├── HrvTrendChart.tsx
+│   │   │   ├── WeightTrendChart.tsx
+│   │   │   ├── CalendarHeatmap.tsx  # Annual activity heatmap (Nivo)
+│   │   │   └── RadarFitnessChart.tsx # Fitness balance radar (Nivo)
+│   │   ├── statistics/              # Statistics page sections
+│   │   │   ├── WeeklyStats.tsx
+│   │   │   ├── MonthlyStats.tsx
+│   │   │   └── AllTimeRecords.tsx
 │   │   ├── activities/              # Activity cards, route maps
 │   │   ├── training/                # Plan cards, calendar
 │   │   ├── nutrition/               # Macro rings, fueling tables
@@ -379,6 +403,146 @@ Since web apps cannot directly read Apple HealthKit, the bridge uses an **iOS Sh
 
 ---
 
+## Statistics & Visualizations
+
+The statistics module is a first-class section of the app, not an afterthought. Every chart uses smooth curves, gradient fills, custom tooltips, and the app's branded colour palette (deep teal primary, amber accent, coral for stress/fatigue). Charts are touch-friendly on iPhone (tap for tooltip, pinch to zoom on time-series).
+
+---
+
+### Per-Activity Graphs (Activity Detail Page)
+
+Shown on the `activities/[id]` page after tapping any activity. Charts are rendered from lap/stream data stored in the FIT file or from Garmin Connect stream API.
+
+#### Trail Run & MTB — shared charts
+
+| Chart | Type | X-axis | Y-axis | Notes |
+|---|---|---|---|---|
+| **Route Map** | Interactive map | — | — | GPS polyline coloured by gradient/pace; Leaflet |
+| **Elevation Profile** | Area chart, gradient fill | Distance (km) | Elevation (m) | Teal-to-white gradient; grade % shown on hover |
+| **Heart Rate over Distance** | Line chart | Distance (km) | BPM | HR zone colour bands as background; smooth curve |
+| **Pace / Speed over Distance** | Line chart (inverted) | Distance (km) | min/km or km/h | Smoothed; threshold pace reference line |
+| **Cadence over Distance** | Line chart | Distance (km) | steps/min (run) or rpm (MTB) | Subtle fill |
+| **HR Zone Distribution** | Donut chart | — | % time in zone | 5-zone colour coded (Z1 grey → Z5 red) |
+| **Lap Splits Table + Bar** | Bar chart | Lap number | Pace or HR | Diverging bar from average |
+
+#### Trail Run — additional
+
+| Chart | Type | Notes |
+|---|---|---|
+| **Gradient vs Pace Scatter** | Scatter plot | Shows how pace degrades on climbs; useful for race planning |
+| **Vertical Speed** | Line chart | Metres gained per hour over distance; identifies effort on climbs |
+
+#### MTB — additional
+
+| Chart | Type | Notes |
+|---|---|---|
+| **Power over Distance** | Line chart | Only if power meter connected; NP reference line |
+| **Speed Distribution** | Histogram | Distribution of speeds across the ride |
+
+#### Weight Training Session
+
+| Chart | Type | Notes |
+|---|---|---|
+| **Volume per Exercise** | Horizontal bar chart | Sets × reps × weight; sorted by total volume |
+| **Session Volume vs Previous** | Grouped bar | Current vs last same-type session; shows progression |
+
+---
+
+### Weekly Trend Graphs (`/statistics/weekly`)
+
+Time range picker: last 4 weeks / 8 weeks / 12 weeks / custom.
+
+| Chart | Type | Description |
+|---|---|---|
+| **Weekly Distance by Sport** | Stacked area chart | Trail run (teal) + MTB (amber) + other stacked; smooth weekly totals |
+| **Weekly Elevation Gain** | Bar chart | Total vertical per week; reference line for weekly elevation goal |
+| **Weekly Training Hours** | Bar chart | Hours by sport, stacked; planned vs actual overlay (dashed line) |
+| **Weekly TSS** | Bar + line combo | Bars = weekly TSS; lines = CTL (fitness) and ATL (fatigue) overlaid |
+| **Weekly Zone Balance** | 100% stacked bar | % of time in each HR zone per week; shows aerobic/intensity ratio |
+| **Average Pace Trend** | Line chart | Rolling 4-week average pace for easy runs and threshold runs separately |
+| **Weekly Steps** | Bar chart | Daily steps summed per week; 10 k/day target line |
+| **HRV 7-Day Average** | Line chart | Rolling weekly HRV average with ±1 SD band; colour zones (green/amber/red) |
+
+---
+
+### Monthly Trend Graphs (`/statistics/monthly`)
+
+Time range picker: last 3 months / 6 months / 12 months / all time.
+
+| Chart | Type | Description |
+|---|---|---|
+| **Monthly Volume (Distance)** | Area chart | Separate lines for trail run and MTB; gradient fills |
+| **Monthly Volume (Hours)** | Area chart | Total training hours per month |
+| **Monthly Elevation** | Bar chart | Total elevation gain per month |
+| **Monthly TSS** | Bar chart | Total monthly training stress; trend line |
+| **Fitness Form (CTL/ATL/TSB)** | Multi-line chart | Three lines with shaded zones; TSB positive = green, negative = red |
+| **Body Weight Trend** | Line chart | Daily weight with 7-day smoothing overlay; target weight reference |
+| **Resting HR Trend** | Line chart | Monthly average with individual daily dots; downward trend = fitness |
+| **HRV Trend** | Line chart | Monthly average HRV with baseline band; upward trend = recovery |
+| **Sleep Quality** | Bar chart | Average nightly sleep hours per month; 8h target line |
+| **Macro Adherence** | Stacked bar | Avg actual vs target protein/carb/fat per month (if logged) |
+
+---
+
+### Long-Term / All-Time (`/statistics/alltime`)
+
+| Chart | Type | Description |
+|---|---|---|
+| **Annual Activity Heatmap** | Calendar heatmap (Nivo) | GitHub-style; colour intensity = TSS; trail run and MTB shown as different hues |
+| **Cumulative Distance** | Area chart | All-time cumulative km by sport; milestone markers (500 km, 1000 km, etc.) |
+| **VO2max Trend** | Line chart | Garmin-estimated VO2max over time; rolling improvement |
+| **Personal Records Table** | Table + sparkline | PRs for 1 km, 5 km, 10 km, half-marathon, marathon distance; date + activity link |
+| **Biggest Weeks / Months** | Ranked bar chart | Top 10 highest-TSS weeks and months all-time |
+| **Fitness Radar** | Radar chart (Nivo) | Spider: Endurance / Speed / Strength / Recovery / Consistency / Elevation — scored 0–100 vs personal historical average |
+| **Year-over-Year Comparison** | Grouped line chart | Monthly volume for each calendar year overlaid; shows improvement trajectory |
+
+---
+
+### Chart Design System
+
+All charts follow a unified visual language:
+
+- **Colour palette:**
+  - Zone 1: `#94a3b8` (slate)
+  - Zone 2: `#22d3ee` (cyan)
+  - Zone 3: `#a3e635` (lime)
+  - Zone 4: `#fb923c` (orange)
+  - Zone 5: `#f43f5e` (rose)
+  - Trail run series: `#0d9488` (teal)
+  - MTB series: `#d97706` (amber)
+  - CTL (fitness): `#6366f1` (indigo)
+  - ATL (fatigue): `#f43f5e` (rose)
+  - TSB (form): `#10b981` (emerald, positive) / `#f43f5e` (rose, negative)
+
+- **Gradient fills:** Area and elevation charts use a vertical gradient from the series colour at full opacity (top) to transparent (bottom), creating depth.
+
+- **Smooth curves:** All time-series use `type="monotone"` (Recharts) for smooth interpolation — no jagged lines.
+
+- **Custom tooltips:** Floating rounded card showing all values at the cursor point; units labelled; on mobile triggered by tap.
+
+- **Responsive containers:** All charts use `ResponsiveContainer` (Recharts) / `width="100%"` (Nivo) — no fixed pixel widths.
+
+- **Skeleton loading:** Each chart position shows an animated pulse skeleton while data loads; no layout shift.
+
+- **Dark mode ready:** All palettes specified in both light and dark variants via Tailwind `dark:` classes.
+
+---
+
+### Backend Statistics API (`/api/statistics/`)
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/statistics/activity/{id}/streams` | Time-series lap/GPS/HR/pace data for per-activity charts |
+| `GET /api/statistics/weekly?weeks=12` | Weekly aggregates: distance, elevation, TSS, zone time by sport |
+| `GET /api/statistics/monthly?months=12` | Monthly aggregates + body metrics trends |
+| `GET /api/statistics/alltime` | PRs, heatmap data, cumulative totals, VO2max history |
+| `GET /api/statistics/pmc?days=120` | ATL, CTL, TSB daily series for PMC chart |
+| `GET /api/statistics/fitness-radar` | Radar scores (0–100) for each fitness dimension |
+
+All endpoints return pre-aggregated data — no heavy computation on the frontend.
+
+---
+
 ## Implementation Phases
 
 ### Phase 1 — Foundation (Week 1–2)
@@ -402,6 +566,20 @@ Since web apps cannot directly read Apple HealthKit, the bridge uses an **iOS Sh
 - [ ] ATL / CTL / TSB computation (daily jobs)
 - [ ] Performance Management Chart (interactive visualization)
 - [ ] Activity detail view with zone breakdown
+
+### Phase 3.5 — Statistics Module (Week 4–5)
+- [ ] Backend `statistics_service.py`: weekly, monthly, all-time aggregation queries
+- [ ] Backend `statistics.py` API routes (all endpoints listed above)
+- [ ] Chart design system: colour palette tokens, gradient utilities, shared tooltip component
+- [ ] **Per-activity charts:** elevation profile, HR over distance, pace over distance, cadence, zone donut, lap splits
+- [ ] **Activity route map:** GPS polyline coloured by pace or gradient
+- [ ] **Gradient vs pace scatter** (trail run) and **speed distribution histogram** (MTB)
+- [ ] **Weight session charts:** volume per exercise bar, session-over-session progression
+- [ ] **Weekly trend page:** distance by sport (stacked area), elevation bar, hours bar, TSS + PMC combo, zone balance, HRV 7-day
+- [ ] **Monthly trend page:** volume area, fitness form (CTL/ATL/TSB), body weight, resting HR, HRV, sleep
+- [ ] **All-time page:** calendar heatmap (Nivo), cumulative distance, VO2max trend, PRs table, fitness radar (Nivo), year-over-year comparison
+- [ ] Skeleton loading states for all charts
+- [ ] Touch-optimised tooltips (tap on iPhone)
 
 ### Phase 4 — Training Planning (Week 4–5)
 - [ ] Goal management UI (target races, distances, dates)
