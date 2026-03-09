@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.deps import ai_unavailable, get_user
 from database import get_db
 from models.nutrition import (
     FoodLog,
@@ -15,7 +16,6 @@ from models.nutrition import (
     NutritionProfile,
     NutritionProfileRead,
 )
-from models.user import User
 from services.nutrition import (
     calculate_bmr,
     calculate_macros,
@@ -27,18 +27,6 @@ import services.ai_coach as coach_svc
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/nutrition", tags=["nutrition"])
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-async def _get_user(db: AsyncSession) -> User:
-    result = await db.execute(select(User).limit(1))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=404, detail="Profile not set up")
-    return user
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +62,7 @@ async def get_today_nutrition(db: AsyncSession = Depends(get_db)) -> NutritionPr
 @router.post("/generate", response_model=NutritionProfileRead)
 async def generate_nutrition(db: AsyncSession = Depends(get_db)) -> NutritionProfileRead:
     """Calculate and upsert today's macro targets based on user profile + planned training."""
-    user = await _get_user(db)
+    user = await get_user(db)
 
     # Validate required fields
     missing = [f for f in ("weight_kg", "height_cm", "sex", "birth_date") if not getattr(user, f)]
@@ -141,7 +129,7 @@ async def get_food_log(
 ) -> dict:
     """Return food log entries for a date (default today) plus daily macro totals."""
     target_date = date or datetime.date.today()
-    user = await _get_user(db)
+    user = await get_user(db)
 
     result = await db.execute(
         select(FoodLog)
@@ -179,6 +167,7 @@ async def delete_food_log(entry_id: int, db: AsyncSession = Depends(get_db)) -> 
 # ---------------------------------------------------------------------------
 
 _ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_MAX_IMAGE_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 class PhotoAnalysisResult(BaseModel):
@@ -190,36 +179,30 @@ class PhotoAnalysisResult(BaseModel):
     notes: str | None = None
 
 
+async def _read_and_analyze(image: UploadFile) -> coach_svc.FoodAnalysis:
+    """Validate, read, and run Claude Vision on an uploaded food image."""
+    if image.content_type not in _ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported image type '{image.content_type}'")
+
+    image_bytes = await image.read()
+    if len(image_bytes) > _MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image too large (max 20 MB)")
+
+    try:
+        return coach_svc.analyze_food_photo(image_bytes, image.content_type)
+    except Exception as exc:
+        logger.exception("Food photo analysis failed")
+        raise ai_unavailable(exc) from exc
+
+
 @router.post("/analyze-photo", response_model=PhotoAnalysisResult)
 async def analyze_photo(image: UploadFile = File(...)) -> PhotoAnalysisResult:
     """Run Claude Vision on a food photo and return macro estimates WITHOUT saving.
 
     Use this for the preview / edit flow. Then submit confirmed values via POST /log.
     """
-    if image.content_type not in _ALLOWED_MIME_TYPES:
-        raise HTTPException(status_code=415, detail=f"Unsupported image type '{image.content_type}'")
-
-    image_bytes = await image.read()
-    if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Image too large (max 20 MB)")
-
-    try:
-        analysis = coach_svc.analyze_food_photo(image_bytes, image.content_type)
-    except Exception as exc:
-        logger.exception("Food photo analysis failed")
-        error_msg = str(exc)
-        if "ANTHROPIC_API_KEY" in error_msg or "api_key" in error_msg.lower():
-            raise HTTPException(status_code=503, detail="AI unavailable: ANTHROPIC_API_KEY not configured") from exc
-        raise HTTPException(status_code=503, detail=f"AI analysis failed: {error_msg}") from exc
-
-    return PhotoAnalysisResult(
-        food_description=analysis.get("food_description") or "",
-        calories=analysis.get("calories"),
-        protein_g=analysis.get("protein_g"),
-        carbs_g=analysis.get("carbs_g"),
-        fat_g=analysis.get("fat_g"),
-        notes=analysis.get("notes"),
-    )
+    analysis = await _read_and_analyze(image)
+    return PhotoAnalysisResult(**analysis)
 
 
 @router.post("/log/photo", response_model=FoodLogRead, status_code=201)
@@ -228,41 +211,19 @@ async def log_food_from_photo(
     image: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ) -> FoodLogRead:
-    """Upload a food photo; Claude Vision estimates macros and saves to the food log.
-
-    The caller should present the returned entry to the user for confirmation/editing,
-    then PATCH the entry (or delete + re-create) to correct Claude's estimates.
-    """
-    user = await _get_user(db)
-
-    if image.content_type not in _ALLOWED_MIME_TYPES:
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported image type '{image.content_type}'. Use JPEG, PNG, GIF, or WebP.",
-        )
-
-    image_bytes = await image.read()
-    if len(image_bytes) > 20 * 1024 * 1024:  # 20 MB limit
-        raise HTTPException(status_code=413, detail="Image too large (max 20 MB)")
-
-    try:
-        analysis = coach_svc.analyze_food_photo(image_bytes, image.content_type)
-    except Exception as exc:
-        logger.exception("Food photo analysis failed")
-        error_msg = str(exc)
-        if "ANTHROPIC_API_KEY" in error_msg or "api_key" in error_msg.lower():
-            raise HTTPException(status_code=503, detail="AI unavailable: ANTHROPIC_API_KEY not configured") from exc
-        raise HTTPException(status_code=503, detail=f"AI analysis failed: {error_msg}") from exc
+    """Upload a food photo; Claude Vision estimates macros and saves to the food log."""
+    user = await get_user(db)
+    analysis = await _read_and_analyze(image)
 
     entry = FoodLog(
         user_id=user.id,
         date=datetime.date.today(),
         meal_type=meal_type,
-        food_description=analysis.get("food_description") or "Unknown food",
-        calories=analysis.get("calories"),
-        protein_g=analysis.get("protein_g"),
-        carbs_g=analysis.get("carbs_g"),
-        fat_g=analysis.get("fat_g"),
+        food_description=analysis["food_description"],
+        calories=analysis["calories"],
+        protein_g=analysis["protein_g"],
+        carbs_g=analysis["carbs_g"],
+        fat_g=analysis["fat_g"],
         source="photo",
     )
     db.add(entry)

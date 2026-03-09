@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Send, Bot, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,39 +12,41 @@ interface Message {
   content: string
 }
 
-const initialMessages: Message[] = [
-  {
-    id: '0',
-    role: 'assistant',
-    content:
-      "Hello! I'm your AI coach. Ask me anything about your training, recovery, nutrition, or race preparation.",
-  },
-]
+// Greeting shown to user but never sent to the API
+const GREETING: Message = {
+  id: 'greeting',
+  role: 'assistant',
+  content:
+    "Hello! I'm your AI coach. Ask me anything about your training, recovery, nutrition, or race preparation.",
+}
 
 export default function CoachPage() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>([GREETING])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const idCounter = useRef(0)
+
+  const nextId = () => String(++idCounter.current)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading])
+  }, [messages])
 
-  async function sendMessage() {
+  const sendMessage = useCallback(async () => {
     const text = inputValue.trim()
     if (!text || isLoading) return
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text }
+    const userMsg: Message = { id: nextId(), role: 'user', content: text }
     const nextMessages = [...messages, userMsg]
     setMessages(nextMessages)
     setInputValue('')
     setIsLoading(true)
 
     try {
-      // Build history for the API (exclude the seed assistant message)
+      // Send only real messages (skip the UI-only greeting)
       const history = nextMessages
-        .filter((m) => m.id !== '0')
+        .filter((m) => m.id !== GREETING.id)
         .map((m) => ({ role: m.role, content: m.content }))
 
       const data = await apiFetch<{ reply: string }>('/api/coach/chat', {
@@ -53,14 +55,14 @@ export default function CoachPage() {
       })
 
       const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: nextId(),
         role: 'assistant',
         content: data.reply,
       }
       setMessages((prev) => [...prev, assistantMsg])
     } catch (err) {
       const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: nextId(),
         role: 'assistant',
         content:
           err instanceof Error && err.message.includes('503')
@@ -71,7 +73,7 @@ export default function CoachPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [messages, inputValue, isLoading])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {

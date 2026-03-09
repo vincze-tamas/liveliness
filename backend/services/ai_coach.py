@@ -13,7 +13,8 @@ import base64
 import datetime
 import json
 import logging
-from typing import Any
+import re
+from typing import Any, TypedDict
 
 import anthropic
 from sqlalchemy import select
@@ -27,6 +28,8 @@ from models.user import User
 from services.training_load import compute_pmc
 
 logger = logging.getLogger(__name__)
+
+_MODEL = "claude-opus-4-6"
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -44,20 +47,27 @@ focused — don't pad with generic advice if the athlete's data tells a specific
 
 
 # ---------------------------------------------------------------------------
+# Typed return for food photo analysis
+# ---------------------------------------------------------------------------
+
+class FoodAnalysis(TypedDict):
+    food_description: str
+    calories: float | None
+    protein_g: float | None
+    carbs_g: float | None
+    fat_g: float | None
+    notes: str | None
+
+
+# ---------------------------------------------------------------------------
 # Context assembly
 # ---------------------------------------------------------------------------
 
-async def build_coaching_context(db: AsyncSession, user_id: int) -> dict[str, Any]:
+async def build_coaching_context(db: AsyncSession, user: User) -> dict[str, Any]:
     """Assemble a rich coaching context dict from the database."""
     today = datetime.date.today()
     eight_weeks_ago = today - datetime.timedelta(weeks=8)
     four_weeks_ago = today - datetime.timedelta(weeks=4)
-
-    # User profile
-    user_result = await db.execute(select(User).where(User.id == user_id).limit(1))
-    user: User | None = user_result.scalar_one_or_none()
-    if user is None:
-        return {}
 
     # Calculate age
     age: int | None = None
@@ -69,7 +79,7 @@ async def build_coaching_context(db: AsyncSession, user_id: int) -> dict[str, An
     # Last 8 weeks of activities for PMC
     acts_result = await db.execute(
         select(Activity)
-        .where(Activity.user_id == user_id, Activity.start_time >= datetime.datetime.combine(eight_weeks_ago, datetime.time.min))
+        .where(Activity.user_id == user.id, Activity.start_time >= datetime.datetime.combine(eight_weeks_ago, datetime.time.min))
         .order_by(Activity.start_time.desc())
     )
     activities = list(acts_result.scalars().all())
@@ -88,7 +98,7 @@ async def build_coaching_context(db: AsyncSession, user_id: int) -> dict[str, An
     health_result = await db.execute(
         select(HealthMetrics)
         .where(
-            HealthMetrics.user_id == user_id,
+            HealthMetrics.user_id == user.id,
             HealthMetrics.date >= today - datetime.timedelta(days=14),
         )
         .order_by(HealthMetrics.date.desc())
@@ -102,7 +112,7 @@ async def build_coaching_context(db: AsyncSession, user_id: int) -> dict[str, An
     # Current training plan
     plan_result = await db.execute(
         select(TrainingPlan)
-        .where(TrainingPlan.user_id == user_id)
+        .where(TrainingPlan.user_id == user.id)
         .order_by(TrainingPlan.week_start.desc())
         .limit(1)
     )
@@ -111,7 +121,7 @@ async def build_coaching_context(db: AsyncSession, user_id: int) -> dict[str, An
     # Active race goals
     race_result = await db.execute(
         select(RaceGoal)
-        .where(RaceGoal.user_id == user_id, RaceGoal.is_active == True, RaceGoal.race_date >= today)  # noqa: E712
+        .where(RaceGoal.user_id == user.id, RaceGoal.is_active == True, RaceGoal.race_date >= today)  # noqa: E712
         .order_by(RaceGoal.race_date)
     )
     race_goals = list(race_result.scalars().all())
@@ -253,6 +263,26 @@ def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
+def _call_claude(
+    system: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+) -> str:
+    """Make a Claude API call and return the text response."""
+    client = _get_client()
+    response = client.messages.create(
+        model=_MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,
+    )
+    return response.content[0].text
+
+
+def _build_system(context: dict[str, Any]) -> str:
+    return f"{_SYSTEM_PROMPT}\n\n## Athlete Data\n{_context_to_text(context)}"
+
+
 # ---------------------------------------------------------------------------
 # Coaching functions
 # ---------------------------------------------------------------------------
@@ -262,34 +292,22 @@ def chat(
     context: dict[str, Any],
 ) -> str:
     """Free-form coaching chat. messages: list of {role, content}."""
-    client = _get_client()
-
-    context_text = _context_to_text(context)
-    system = f"{_SYSTEM_PROMPT}\n\n## Athlete Data\n{context_text}"
-
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=1024,
-        system=system,
+    return _call_claude(
+        system=_build_system(context),
         messages=[{"role": m["role"], "content": m["content"]} for m in messages],
+        max_tokens=1024,
     )
-    return response.content[0].text
 
 
 def debrief(activity_data: dict[str, Any], context: dict[str, Any]) -> str:
     """Generate a post-activity debrief for a completed session."""
-    client = _get_client()
-
-    context_text = _context_to_text(context)
     sport = activity_data.get("sport", "activity")
     duration_min = round((activity_data.get("duration_s") or 0) / 60)
     distance_km = round((activity_data.get("distance_m") or 0) / 1000, 1)
-
     activity_text = json.dumps(
         {k: v for k, v in activity_data.items() if v is not None and k not in ("gpx_data", "fit_file_path")},
         default=str,
     )
-
     prompt = (
         f"Analyse this completed {sport} session and give a concise debrief:\n\n"
         f"Activity data:\n{activity_text}\n\n"
@@ -297,79 +315,51 @@ def debrief(activity_data: dict[str, Any], context: dict[str, Any]) -> str:
         f"recent training? Is the athlete recovering well (TSB)? Any technique or pacing notes? "
         f"What should they focus on next?"
     )
-
-    system = f"{_SYSTEM_PROMPT}\n\n## Athlete Data\n{context_text}"
-
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=600,
-        system=system,
+    return _call_claude(
+        system=_build_system(context),
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=800,
     )
-    return response.content[0].text
 
 
 def weekly_narrative(plan_data: dict[str, Any], context: dict[str, Any]) -> str:
     """Generate an AI narrative / rationale for a weekly training plan."""
-    client = _get_client()
-
-    context_text = _context_to_text(context)
     plan_text = json.dumps(plan_data, default=str)
-
     prompt = (
         f"Write a motivating but concise weekly training plan narrative (3–5 sentences) "
         f"for the following plan. Explain the training rationale — why these sessions, "
         f"this load, and this focus given the athlete's current fitness and phase:\n\n"
         f"Plan:\n{plan_text}"
     )
-
-    system = f"{_SYSTEM_PROMPT}\n\n## Athlete Data\n{context_text}"
-
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=400,
-        system=system,
+    return _call_claude(
+        system=_build_system(context),
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=400,
     )
-    return response.content[0].text
 
 
 def nutrition_advice(context: dict[str, Any], tomorrow_plan: dict[str, Any] | None = None) -> str:
     """Generate personalised daily nutrition advice."""
-    client = _get_client()
-
-    context_text = _context_to_text(context)
     tomorrow_text = (
         f"\nTomorrow's planned training: {json.dumps(tomorrow_plan, default=str)}"
         if tomorrow_plan
         else "\nTomorrow: rest day or no plan yet."
     )
-
     prompt = (
         "Give brief, actionable daily nutrition advice for this athlete. "
         "Focus on: what to eat today for recovery/preparation, key macro targets, "
         "hydration, and any timing recommendations around training." + tomorrow_text
     )
-
-    system = f"{_SYSTEM_PROMPT}\n\n## Athlete Data\n{context_text}"
-
-    response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=400,
-        system=system,
+    return _call_claude(
+        system=_build_system(context),
         messages=[{"role": "user", "content": prompt}],
+        max_tokens=400,
     )
-    return response.content[0].text
 
 
-def analyze_food_photo(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
-    """Use Claude Vision to identify foods in an image and estimate macros.
-
-    Returns a dict with:
-      food_description, calories, protein_g, carbs_g, fat_g, notes
-    """
+def analyze_food_photo(image_bytes: bytes, mime_type: str) -> FoodAnalysis:
+    """Use Claude Vision to identify foods in an image and estimate macros."""
     client = _get_client()
-
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     prompt = (
@@ -385,8 +375,8 @@ def analyze_food_photo(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     )
 
     response = client.messages.create(
-        model="claude-opus-4-6",
-        max_tokens=400,
+        model=_MODEL,
+        max_tokens=600,
         messages=[
             {
                 "role": "user",
@@ -406,24 +396,20 @@ def analyze_food_photo(image_bytes: bytes, mime_type: str) -> dict[str, Any]:
     )
 
     raw = response.content[0].text.strip()
-    # Strip markdown code fences if Claude wrapped the JSON
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    # Strip markdown code fences if present (e.g. ```json ... ```)
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
 
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
         logger.warning("Claude returned non-JSON food analysis: %s", raw)
-        result = {
-            "food_description": "Unable to parse",
-            "calories": None,
-            "protein_g": None,
-            "carbs_g": None,
-            "fat_g": None,
-            "notes": raw,
-        }
+        result = {}
 
-    return result
+    return FoodAnalysis(
+        food_description=result.get("food_description") or "Unable to identify food",
+        calories=result.get("calories"),
+        protein_g=result.get("protein_g"),
+        carbs_g=result.get("carbs_g"),
+        fat_g=result.get("fat_g"),
+        notes=result.get("notes") or (raw if not result else None),
+    )

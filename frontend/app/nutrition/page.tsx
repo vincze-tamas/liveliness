@@ -143,11 +143,14 @@ function PhotoFoodForm({ userId, onAdded }: PhotoFoodFormProps) {
   const [saving, setSaving] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const today = new Date().toISOString().split('T')[0]
+  function revokePreview() {
+    setPreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null })
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
+    revokePreview()
     setFile(f)
     setPreviewUrl(URL.createObjectURL(f))
     setAnalysis(null)
@@ -197,7 +200,7 @@ function PhotoFoodForm({ userId, onAdded }: PhotoFoodFormProps) {
         method: 'POST',
         body: JSON.stringify({
           user_id: userId,
-          date: today,
+          date: new Date().toISOString().split('T')[0],
           meal_type: mealType,
           food_description: description.trim(),
           calories: calories ? parseFloat(calories) : null,
@@ -207,9 +210,9 @@ function PhotoFoodForm({ userId, onAdded }: PhotoFoodFormProps) {
           source: 'photo',
         }),
       })
+      revokePreview()
       setOpen(false)
       setFile(null)
-      setPreviewUrl(null)
       setAnalysis(null)
       setDescription('')
       setCalories('')
@@ -234,7 +237,7 @@ function PhotoFoodForm({ userId, onAdded }: PhotoFoodFormProps) {
     <div className="border rounded-xl p-4 bg-slate-50 dark:bg-slate-800/50 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Photo food log</p>
-        <button onClick={() => setOpen(false)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+        <button onClick={() => { revokePreview(); setOpen(false) }} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
           Cancel
         </button>
       </div>
@@ -367,8 +370,6 @@ function AddFoodForm({ userId, onAdded }: AddFoodFormProps) {
   const [fat, setFat] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const today = new Date().toISOString().split('T')[0]
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!description.trim()) return
@@ -378,7 +379,7 @@ function AddFoodForm({ userId, onAdded }: AddFoodFormProps) {
         method: 'POST',
         body: JSON.stringify({
           user_id: userId,
-          date: today,
+          date: new Date().toISOString().split('T')[0],
           meal_type: mealType,
           food_description: description.trim(),
           calories: calories ? parseFloat(calories) : null,
