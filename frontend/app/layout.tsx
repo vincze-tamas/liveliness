@@ -36,6 +36,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: 'cover',   // required for env(safe-area-inset-*) on iPhone notch/home bar
 }
 
 export default function RootLayout({
@@ -48,7 +49,7 @@ export default function RootLayout({
       <body className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
         <Providers>
           <TopHeader />
-          <main className="flex-1 pb-20 pt-16 overflow-y-auto">
+          <main className="flex-1 pb-nav-safe pt-16 overflow-y-auto">
             {children}
           </main>
           <BottomNav />

@@ -45,6 +45,16 @@
 }
 
 @layer utilities {
+  /* Safe area helpers for iPhone notch / Dynamic Island / home indicator.
+     Requires viewport-fit=cover in the <meta viewport> tag (set in layout.tsx). */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Bottom padding for page content: nav bar (4 rem) + home indicator clearance */
+  .pb-nav-safe {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom));
+  }
+
   .sport-trail-run { color: var(--sport-trail-run); }
   .sport-mtb { color: var(--sport-mtb); }
   .sport-road-bike { color: var(--sport-road-bike); }
