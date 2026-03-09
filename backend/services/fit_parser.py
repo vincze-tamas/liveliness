@@ -68,7 +68,11 @@ def parse_fit_records(data: bytes) -> dict[str, list[Any]]:
         hr.append(fields.get("heart_rate"))
 
         pwr = fields.get("power")
-        power.append(float(pwr) if pwr is not None and int(pwr) != 0xFFFF else None)
+        if pwr is not None:
+            pwr_int = int(round(float(pwr)))
+            power.append(float(pwr_int) if pwr_int != 0xFFFF else None)
+        else:
+            power.append(None)
 
         alt = fields.get("altitude") or fields.get("enhanced_altitude")
         altitude.append(float(alt) if alt is not None else None)

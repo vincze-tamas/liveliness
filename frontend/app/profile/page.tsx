@@ -39,11 +39,11 @@ const EMPTY_PROFILE: ProfileData = {
 
 /** Convert "mm:ss" pace string to seconds per km, or null if unparseable. */
 function parsePaceToSeconds(pace: string): number | null {
-  const parts = pace.trim().split(':')
-  if (parts.length !== 2) return null
-  const mins = parseInt(parts[0], 10)
-  const secs = parseInt(parts[1], 10)
-  if (isNaN(mins) || isNaN(secs)) return null
+  if (!/^\d{1,3}:\d{2}$/.test(pace.trim())) return null
+  const [minPart, secPart] = pace.trim().split(':')
+  const mins = parseInt(minPart, 10)
+  const secs = parseInt(secPart, 10)
+  if (secs >= 60) return null
   return mins * 60 + secs
 }
 

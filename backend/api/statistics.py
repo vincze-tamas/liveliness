@@ -1,7 +1,10 @@
 import datetime
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,5 +148,6 @@ async def activity_streams(
         return parse_fit_records(raw)
     except FileNotFoundError:
         return {}
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to parse FIT streams for activity %d: %s", activity_id, exc)
         return {}
