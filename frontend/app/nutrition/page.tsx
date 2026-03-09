@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Beef, Wheat, Droplets, Flame, UserCircle, Plus, Trash2, RefreshCw } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Beef, Camera, Wheat, Droplets, Flame, UserCircle, Plus, Trash2, RefreshCw, Loader2 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/api'
+
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -106,10 +108,249 @@ function TrainingBadge({ type }: { type: string | null }) {
 }
 
 // ---------------------------------------------------------------------------
-// Add food form
+// Photo food form
 // ---------------------------------------------------------------------------
 
 const MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'snack']
+
+interface PhotoAnalysisResult {
+  food_description: string
+  calories: number | null
+  protein_g: number | null
+  carbs_g: number | null
+  fat_g: number | null
+  notes: string | null
+}
+
+interface PhotoFoodFormProps {
+  userId: number
+  onAdded: () => void
+}
+
+function PhotoFoodForm({ userId, onAdded }: PhotoFoodFormProps) {
+  const [open, setOpen] = useState(false)
+  const [mealType, setMealType] = useState('snack')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [analysis, setAnalysis] = useState<PhotoAnalysisResult | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
+  const [calories, setCalories] = useState('')
+  const [protein, setProtein] = useState('')
+  const [carbs, setCarbs] = useState('')
+  const [fat, setFat] = useState('')
+  const [saving, setSaving] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const today = new Date().toISOString().split('T')[0]
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setFile(f)
+    setPreviewUrl(URL.createObjectURL(f))
+    setAnalysis(null)
+    setAnalyzeError(null)
+    setDescription('')
+    setCalories('')
+    setProtein('')
+    setCarbs('')
+    setFat('')
+  }
+
+  async function handleAnalyze() {
+    if (!file) return
+    setAnalyzing(true)
+    setAnalyzeError(null)
+    try {
+      const formData = new FormData()
+      formData.append('image', file)
+      const res = await fetch(`${BASE}/api/nutrition/analyze-photo`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.detail ?? `HTTP ${res.status}`)
+      }
+      const result: PhotoAnalysisResult = await res.json()
+      setAnalysis(result)
+      setDescription(result.food_description)
+      setCalories(result.calories != null ? String(Math.round(result.calories)) : '')
+      setProtein(result.protein_g != null ? String(Math.round(result.protein_g)) : '')
+      setCarbs(result.carbs_g != null ? String(Math.round(result.carbs_g)) : '')
+      setFat(result.fat_g != null ? String(Math.round(result.fat_g)) : '')
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : 'Analysis failed')
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault()
+    if (!description.trim()) return
+    setSaving(true)
+    try {
+      await apiFetch('/api/nutrition/log', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          date: today,
+          meal_type: mealType,
+          food_description: description.trim(),
+          calories: calories ? parseFloat(calories) : null,
+          protein_g: protein ? parseFloat(protein) : null,
+          carbs_g: carbs ? parseFloat(carbs) : null,
+          fat_g: fat ? parseFloat(fat) : null,
+          source: 'photo',
+        }),
+      })
+      setOpen(false)
+      setFile(null)
+      setPreviewUrl(null)
+      setAnalysis(null)
+      setDescription('')
+      setCalories('')
+      setProtein('')
+      setCarbs('')
+      setFat('')
+      onAdded()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="w-full">
+        <Camera className="w-4 h-4 mr-1" /> Log with photo
+      </Button>
+    )
+  }
+
+  return (
+    <div className="border rounded-xl p-4 bg-slate-50 dark:bg-slate-800/50 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Photo food log</p>
+        <button onClick={() => setOpen(false)} className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+          Cancel
+        </button>
+      </div>
+
+      {/* Meal selector */}
+      <div>
+        <Label className="text-xs mb-1 block">Meal</Label>
+        <Select value={mealType} onValueChange={setMealType}>
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MEAL_TYPES.map(m => (
+              <SelectItem key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Camera input */}
+      <div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileChange}
+          className="hidden"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Camera className="w-4 h-4 mr-1" />
+          {file ? 'Change photo' : 'Take / choose photo'}
+        </Button>
+      </div>
+
+      {/* Preview */}
+      {previewUrl && (
+        <div className="space-y-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt="Food preview"
+            className="w-full max-h-48 object-cover rounded-lg border border-slate-200 dark:border-slate-700"
+          />
+          {!analysis && (
+            <Button
+              type="button"
+              size="sm"
+              className="w-full"
+              onClick={handleAnalyze}
+              disabled={analyzing}
+            >
+              {analyzing ? (
+                <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Analysing…</>
+              ) : (
+                'Analyse with AI'
+              )}
+            </Button>
+          )}
+          {analyzeError && (
+            <p className="text-xs text-red-500">{analyzeError}</p>
+          )}
+        </div>
+      )}
+
+      {/* Editable form after analysis */}
+      {analysis && (
+        <form onSubmit={handleSave} className="space-y-3">
+          {analysis.notes && (
+            <p className="text-xs text-slate-400 dark:text-slate-500 italic">{analysis.notes}</p>
+          )}
+          <div>
+            <Label className="text-xs mb-1 block">Description</Label>
+            <Input
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              className="h-9"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs mb-1 block">Calories (kcal)</Label>
+              <Input type="number" min="0" value={calories} onChange={e => setCalories(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Protein (g)</Label>
+              <Input type="number" min="0" value={protein} onChange={e => setProtein(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Carbs (g)</Label>
+              <Input type="number" min="0" value={carbs} onChange={e => setCarbs(e.target.value)} className="h-9" />
+            </div>
+            <div>
+              <Label className="text-xs mb-1 block">Fat (g)</Label>
+              <Input type="number" min="0" value={fat} onChange={e => setFat(e.target.value)} className="h-9" />
+            </div>
+          </div>
+          <Button type="submit" size="sm" disabled={saving} className="w-full">
+            {saving ? 'Saving…' : 'Confirm & Save'}
+          </Button>
+        </form>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Add food form (manual)
+// ---------------------------------------------------------------------------
 
 interface AddFoodFormProps {
   userId: number
@@ -402,6 +643,7 @@ export default function NutritionPage() {
           )}
 
           <AddFoodForm userId={userProfile?.id ?? 1} onAdded={() => refetchLog()} />
+          <PhotoFoodForm userId={userProfile?.id ?? 1} onAdded={() => refetchLog()} />
         </CardContent>
       </Card>
 

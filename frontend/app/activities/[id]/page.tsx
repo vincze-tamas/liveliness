@@ -1,6 +1,7 @@
 'use client'
 
-import { ArrowLeft, Clock, Map, Mountain, Heart, Zap, TrendingUp } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, Bot, Clock, Loader2, Map, Mountain, Heart, Zap, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -17,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { SportBadge, type SportType } from '@/components/activities/SportBadge'
 import { apiFetch } from '@/lib/api'
 import { formatDuration, formatDistance, formatPace, formatLongDate } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 
 interface ActivityRead {
   id: number
@@ -61,6 +63,10 @@ interface Props {
 }
 
 export default function ActivityDetailPage({ params }: Props) {
+  const [debrief, setDebrief] = useState<string | null>(null)
+  const [debriefLoading, setDebriefLoading] = useState(false)
+  const [debriefError, setDebriefError] = useState<string | null>(null)
+
   const { data: activity, isLoading, isError } = useQuery<ActivityRead>({
     queryKey: ['activity', params.id],
     queryFn: () => apiFetch<ActivityRead>(`/api/activities/${params.id}`),
@@ -95,6 +101,25 @@ export default function ActivityDetailPage({ params }: Props) {
     const mm = Math.floor(s / 60)
     const ss = String(Math.round(s % 60)).padStart(2, '0')
     return `${mm}:${ss}`
+  }
+
+  async function handleDebrief() {
+    setDebriefLoading(true)
+    setDebriefError(null)
+    try {
+      const data = await apiFetch<{ debrief: string }>(`/api/coach/debrief/${params.id}`, {
+        method: 'POST',
+      })
+      setDebrief(data.debrief)
+    } catch (err) {
+      setDebriefError(
+        err instanceof Error && err.message.includes('503')
+          ? 'AI coaching unavailable — check ANTHROPIC_API_KEY.'
+          : 'Failed to generate debrief. Try again.'
+      )
+    } finally {
+      setDebriefLoading(false)
+    }
   }
 
   const sport = activity?.sport
@@ -293,6 +318,45 @@ export default function ActivityDetailPage({ params }: Props) {
         </Card>
         )
       })()}
+
+      {/* AI Debrief */}
+      {activity && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <div className="flex items-center gap-2">
+              <Bot className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+              <CardTitle>AI Debrief</CardTitle>
+            </div>
+            {!debrief && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDebrief}
+                disabled={debriefLoading}
+              >
+                {debriefLoading ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Analysing…</>
+                ) : (
+                  'Generate'
+                )}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {debrief ? (
+              <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+                {debrief}
+              </p>
+            ) : debriefError ? (
+              <p className="text-sm text-red-500">{debriefError}</p>
+            ) : (
+              <p className="text-sm text-slate-400 dark:text-slate-500">
+                Press Generate to get an AI-powered analysis of this session.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stream Charts */}
       {activity && chartData && (
