@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from database import get_db
 from models.activity import Activity, ActivityRead
-from models.health_metrics import HealthMetrics
+from models.health_metrics import HealthMetrics, HealthMetricsRead
 from models.user import User
 from services.apple_health import parse_export_bytes
 from services.fit_parser import parse_fit_bytes
@@ -75,6 +75,38 @@ async def _get_user(db: AsyncSession) -> User:
     if user is None:
         raise HTTPException(status_code=404, detail="Profile not set up")
     return user
+
+
+# ---------------------------------------------------------------------------
+# Health metrics read endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/metrics", response_model=list[HealthMetricsRead])
+async def list_health_metrics(
+    days: int = 30,
+    db: AsyncSession = Depends(get_db),
+) -> list[HealthMetricsRead]:
+    """Return the last *days* days of health metrics, newest first."""
+    cutoff = datetime.date.today() - datetime.timedelta(days=days)
+    result = await db.execute(
+        select(HealthMetrics)
+        .where(HealthMetrics.date >= cutoff)
+        .order_by(HealthMetrics.date.desc())
+    )
+    return list(result.scalars().all())
+
+
+@router.get("/metrics/today", response_model=HealthMetricsRead)
+async def get_today_metrics(db: AsyncSession = Depends(get_db)) -> HealthMetricsRead:
+    """Return today's health metrics row, or 404 if not yet synced."""
+    today = datetime.date.today()
+    result = await db.execute(
+        select(HealthMetrics).where(HealthMetrics.date == today).limit(1)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No health metrics for today")
+    return row
 
 
 # ---------------------------------------------------------------------------

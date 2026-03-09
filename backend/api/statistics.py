@@ -1,32 +1,81 @@
+import datetime
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from database import get_db
+from models.activity import Activity
+from models.health_metrics import HealthMetrics
+from models.user import User
+from services.training_load import (
+    compute_alltime,
+    compute_monthly,
+    compute_pmc,
+    compute_weekly,
+)
 
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
 
+async def _get_user(db: AsyncSession) -> User | None:
+    result = await db.execute(select(User).limit(1))
+    return result.scalar_one_or_none()
+
+
+async def _get_all_activities(db: AsyncSession) -> list[Activity]:
+    result = await db.execute(select(Activity).order_by(Activity.start_time))
+    return list(result.scalars().all())
+
+
 @router.get("/weekly")
-async def weekly_statistics(weeks: int = 12) -> list[Any]:
-    # TODO: compute weekly training load aggregates
-    return []
+async def weekly_statistics(
+    weeks: int = 12,
+    db: AsyncSession = Depends(get_db),
+) -> list[Any]:
+    user = await _get_user(db)
+    if user is None:
+        return []
+    acts = await _get_all_activities(db)
+    cutoff = datetime.date.today() - datetime.timedelta(weeks=weeks + 1)
+    health_res = await db.execute(
+        select(HealthMetrics)
+        .where(HealthMetrics.date >= cutoff)
+        .order_by(HealthMetrics.date)
+    )
+    health_rows = list(health_res.scalars().all())
+    return compute_weekly(acts, health_rows, user, weeks=weeks)
 
 
 @router.get("/monthly")
-async def monthly_statistics(months: int = 12) -> list[Any]:
-    # TODO: compute monthly training load aggregates
-    return []
+async def monthly_statistics(
+    months: int = 12,
+    db: AsyncSession = Depends(get_db),
+) -> list[Any]:
+    user = await _get_user(db)
+    if user is None:
+        return []
+    acts = await _get_all_activities(db)
+    return compute_monthly(acts, user, months=months)
 
 
 @router.get("/alltime")
-async def alltime_statistics() -> dict[str, Any]:
-    # TODO: compute all-time totals and personal records
-    return {}
+async def alltime_statistics(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    acts = await _get_all_activities(db)
+    return compute_alltime(acts)
 
 
 @router.get("/pmc")
-async def performance_management_chart(days: int = 120) -> list[Any]:
-    # TODO: compute CTL, ATL, TSB (Performance Management Chart)
-    return []
+async def performance_management_chart(
+    days: int = 120,
+    db: AsyncSession = Depends(get_db),
+) -> list[Any]:
+    user = await _get_user(db)
+    if user is None:
+        return []
+    acts = await _get_all_activities(db)
+    return compute_pmc(acts, user, days=days)
 
 
 @router.get("/activity/{activity_id}/streams")
