@@ -15,6 +15,7 @@ interface ProfileData {
   birthDate: string
   weight: string
   height: string
+  activityLevel: string
   maxHR: string
   restingHR: string
   ftpCycling: string
@@ -29,6 +30,7 @@ const EMPTY_PROFILE: ProfileData = {
   birthDate: '',
   weight: '',
   height: '',
+  activityLevel: '',
   maxHR: '',
   restingHR: '',
   ftpCycling: '',
@@ -78,6 +80,7 @@ export default function ProfilePage() {
       ftp_cycling_w?: number | null
       ftp_running_pace_s_per_km?: number | null
       garmin_username?: string | null
+      activity_level?: string | null
     }>('/api/profile')
       .then((data) => {
         setProfileExists(true)
@@ -87,6 +90,7 @@ export default function ProfilePage() {
           birthDate: data.birth_date ?? '',
           weight: data.weight_kg != null ? String(data.weight_kg) : '',
           height: data.height_cm != null ? String(data.height_cm) : '',
+          activityLevel: data.activity_level ?? '',
           maxHR: data.max_hr != null ? String(data.max_hr) : '',
           restingHR: data.resting_hr != null ? String(data.resting_hr) : '',
           ftpCycling: data.ftp_cycling_w != null ? String(data.ftp_cycling_w) : '',
@@ -129,6 +133,7 @@ export default function ProfilePage() {
         birth_date: profile.birthDate || null,
         weight_kg: profile.weight ? parseFloat(profile.weight) : null,
         height_cm: profile.height ? parseFloat(profile.height) : null,
+        activity_level: profile.activityLevel || null,
         max_hr: profile.maxHR ? parseInt(profile.maxHR, 10) : null,
         resting_hr: profile.restingHR ? parseInt(profile.restingHR, 10) : null,
         ftp_cycling_w: profile.ftpCycling ? parseFloat(profile.ftpCycling) : null,
@@ -286,6 +291,25 @@ export default function ProfilePage() {
                 onChange={handleChange('height')}
               />
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="activityLevel">Activity Level</Label>
+            <Select
+              id="activityLevel"
+              value={profile.activityLevel}
+              onChange={handleChange('activityLevel')}
+            >
+              <option value="">Select…</option>
+              <option value="sedentary">Sedentary (desk job, little exercise)</option>
+              <option value="light">Light (1–3 days/week)</option>
+              <option value="moderate">Moderate (3–5 days/week)</option>
+              <option value="active">Active (6–7 days/week)</option>
+              <option value="very_active">Very active (twice/day or physical job)</option>
+            </Select>
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Used to calculate your daily calorie target (TDEE)
+            </p>
           </div>
         </CardContent>
       </Card>

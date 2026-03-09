@@ -80,7 +80,8 @@ async def generate_nutrition(db: AsyncSession = Depends(get_db)) -> NutritionPro
         )
 
     today = datetime.date.today()
-    age = (today - user.birth_date).days // 365
+    birthday_this_year = user.birth_date.replace(year=today.year)
+    age = today.year - user.birth_date.year - (1 if today < birthday_this_year else 0)
 
     bmr = calculate_bmr(user.weight_kg, user.height_cm, age, user.sex)
     tdee = calculate_tdee(bmr, user.activity_level or "moderate")

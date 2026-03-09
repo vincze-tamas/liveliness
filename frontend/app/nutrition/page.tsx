@@ -225,7 +225,13 @@ function AddFoodForm({ userId, onAdded }: AddFoodFormProps) {
 export default function NutritionPage() {
   const queryClient = useQueryClient()
 
-  const { data: profile, isLoading: profileLoading, error: profileError, refetch: refetchProfile } = useQuery<NutritionProfile>({
+  const { data: userProfile } = useQuery<{ id: number }>({
+    queryKey: ['profile'],
+    queryFn: () => apiFetch('/api/profile'),
+    retry: false,
+  })
+
+  const { data: profile, isLoading: profileLoading, error: profileError } = useQuery<NutritionProfile>({
     queryKey: ['nutrition', 'today'],
     queryFn: () => apiFetch('/api/nutrition/today'),
     retry: false,
@@ -395,8 +401,7 @@ export default function NutritionPage() {
             </p>
           )}
 
-          {/* Add food form — needs user_id; fall back to 1 for single-user app */}
-          <AddFoodForm userId={1} onAdded={() => refetchLog()} />
+          <AddFoodForm userId={userProfile?.id ?? 1} onAdded={() => refetchLog()} />
         </CardContent>
       </Card>
 
