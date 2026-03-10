@@ -9,18 +9,17 @@ interface BeforeInstallPromptEvent extends Event {
   readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+const INSTALL_DISMISSED_KEY = 'pwa-install-dismissed'
+
 export function InstallPrompt() {
   const [prompt, setPrompt] = useState<BeforeInstallPromptEvent | null>(null)
-  const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
-    // Only shown if the app is not already installed and the browser supports the event.
-    // Safari (iOS) doesn't fire this event — the setup page guides iOS users manually.
-    if (localStorage.getItem('pwa-install-dismissed') === '1') {
-      setDismissed(true)
-      return
-    }
+    // Safari (iOS) never fires this event — the setup page guides iOS users manually.
     const handler = (e: Event) => {
+      // Check on every fire so a permanent dismissal is respected even if the
+      // browser re-fires the event after a page navigation.
+      if (localStorage.getItem(INSTALL_DISMISSED_KEY) === '1') return
       e.preventDefault()
       setPrompt(e as BeforeInstallPromptEvent)
     }
@@ -29,8 +28,7 @@ export function InstallPrompt() {
   }, [])
 
   function dismiss() {
-    localStorage.setItem('pwa-install-dismissed', '1')
-    setDismissed(true)
+    localStorage.setItem(INSTALL_DISMISSED_KEY, '1')
     setPrompt(null)
   }
 
@@ -42,7 +40,7 @@ export function InstallPrompt() {
     else setPrompt(null)
   }
 
-  if (!prompt || dismissed) return null
+  if (!prompt) return null
 
   return (
     <div className="fixed bottom-20 inset-x-3 z-40 flex items-center gap-3 rounded-xl bg-slate-900 dark:bg-slate-800 text-white shadow-2xl px-4 py-3 border border-slate-700">

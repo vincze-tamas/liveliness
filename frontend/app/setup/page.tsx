@@ -211,13 +211,13 @@ export default function SetupPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {[
-                ['&ldquo;Could not connect&rdquo;', 'Verify IP; ensure backend is running (docker compose ps)'],
+                ['\u201CCould not connect\u201D', 'Verify IP; ensure backend is running (docker compose ps)'],
                 ['Shortcut asks for permission', 'Settings → Privacy & Security → Health → Shortcuts → Allow'],
                 ['No HRV data', 'HRV requires a chest strap or Garmin morning measurement'],
                 ['Workouts missing', 'Garmin Connect app → Settings → Health & Fitness → Share with Health'],
               ].map(([p, s]) => (
                 <tr key={p}>
-                  <td className="py-1.5 pr-3 text-slate-600 dark:text-slate-400" dangerouslySetInnerHTML={{ __html: p }} />
+                  <td className="py-1.5 pr-3 text-slate-600 dark:text-slate-400">{p}</td>
                   <td className="py-1.5 text-slate-500">{s}</td>
                 </tr>
               ))}
