@@ -64,18 +64,32 @@ export default function SetupPage() {
               </ol>
             </div>
 
+            <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3 space-y-1">
+              <p className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-slate-400" />
+                Option B — Tailscale
+              </p>
+              <p className="text-slate-500 dark:text-slate-400 text-xs">
+                Works anywhere — not just at home. Requires a computer running 24/7.
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-xs text-slate-500 dark:text-slate-400 mt-2">
+                <li>Install Tailscale on your computer and iPhone; sign in with the same account.</li>
+                <li>Find your computer&apos;s Tailscale IP (e.g. <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">100.64.0.5</code>).</li>
+                <li>Your endpoint: <code className="bg-slate-200 dark:bg-slate-700 px-1 rounded">http://100.64.0.5:8000/api/health/sync</code></li>
+              </ol>
+            </div>
+
             <div className="rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-200 dark:border-teal-800 p-3 space-y-1">
               <p className="font-medium text-teal-800 dark:text-teal-300 flex items-center gap-1.5">
                 <Globe className="w-4 h-4" />
-                Option B — Tailscale <span className="text-xs font-normal">(recommended)</span>
+                Option C — VPS / Cloud <span className="text-xs font-normal">(recommended — no computer needed)</span>
               </p>
               <p className="text-xs text-teal-700 dark:text-teal-400">
-                Works anywhere — not just at home.
+                App runs on a cheap VPS (~€4/month). Works from anywhere, no computer required.
               </p>
               <ol className="list-decimal list-inside space-y-1 text-xs text-teal-700 dark:text-teal-400 mt-2">
-                <li>Install Tailscale on your computer and iPhone; sign in with the same account.</li>
-                <li>Find your computer&apos;s Tailscale IP (e.g. <code className="bg-teal-100 dark:bg-teal-900/40 px-1 rounded">100.64.0.5</code>).</li>
-                <li>Your endpoint: <code className="bg-teal-100 dark:bg-teal-900/40 px-1 rounded">http://100.64.0.5:8000/api/health/sync</code></li>
+                <li>Deploy with <code className="bg-teal-100 dark:bg-teal-900/40 px-1 rounded">docker compose -f docker-compose.prod.yml up -d</code></li>
+                <li>Your endpoint: <code className="bg-teal-100 dark:bg-teal-900/40 px-1 rounded">https://yourdomain.com/api/health/sync</code></li>
               </ol>
             </div>
           </div>

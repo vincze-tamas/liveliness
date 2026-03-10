@@ -1,0 +1,19 @@
+# Liveliness — reverse proxy + automatic HTTPS
+# Variables are injected from docker-compose.prod.yml environment
+
+{$DOMAIN} {
+    # Basic auth protects the whole app (no built-in user auth)
+    basicauth * {
+        {$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+    }
+
+    # API requests go to the FastAPI backend
+    handle /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else goes to the Next.js frontend
+    handle {
+        reverse_proxy frontend:3000
+    }
+}
