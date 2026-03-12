@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --sport-trail-run: #0d9488;
+  --sport-mtb: #d97706;
+  --sport-road-bike: #6366f1;
+  --sport-ski: #38bdf8;
+  --sport-inline-skate: #f472b6;
+  --sport-gym: #a855f7;
+
+  --background: 248 250 252;
+  --foreground: 15 23 42;
+  --card: 255 255 255;
+  --card-foreground: 15 23 42;
+  --border: 226 232 240;
+  --muted: 241 245 249;
+  --muted-foreground: 100 116 139;
+  --primary: 13 148 136;
+  --primary-foreground: 255 255 255;
+
+  /* Layout */
+  --nav-height: 4rem;  /* must match BottomNav h-16 */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 15 23 42;
+    --foreground: 248 250 252;
+    --card: 30 41 59;
+    --card-foreground: 248 250 252;
+    --border: 51 65 85;
+    --muted: 30 41 59;
+    --muted-foreground: 148 163 184;
+    --primary: 13 148 136;
+    --primary-foreground: 255 255 255;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-slate-200 dark:border-slate-700;
+  }
+  body {
+    @apply bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-50 antialiased;
+  }
+}
+
+@layer utilities {
+  /* Safe area helpers for iPhone notch / Dynamic Island / home indicator.
+     Requires viewport-fit=cover in the <meta viewport> tag (set in layout.tsx). */
+  .safe-area-inset-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  /* Bottom padding for page content: nav bar height + home indicator clearance */
+  .pb-nav-safe {
+    padding-bottom: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  }
+
+  .sport-trail-run { color: var(--sport-trail-run); }
+  .sport-mtb { color: var(--sport-mtb); }
+  .sport-road-bike { color: var(--sport-road-bike); }
+  .sport-ski { color: var(--sport-ski); }
+  .sport-inline-skate { color: var(--sport-inline-skate); }
+  .sport-gym { color: var(--sport-gym); }
+
+  .bg-sport-trail-run { background-color: var(--sport-trail-run); }
+  .bg-sport-mtb { background-color: var(--sport-mtb); }
+  .bg-sport-road-bike { background-color: var(--sport-road-bike); }
+  .bg-sport-ski { background-color: var(--sport-ski); }
+  .bg-sport-inline-skate { background-color: var(--sport-inline-skate); }
+  .bg-sport-gym { background-color: var(--sport-gym); }
+}

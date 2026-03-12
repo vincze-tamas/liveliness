@@ -1,0 +1,59 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH}
+    depends_on: [frontend, backend]
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    expose:
+      - "8000"
+    volumes:
+      - liveliness_data:/data
+    environment:
+      DATABASE_URL: "sqlite+aiosqlite:////data/liveliness.db"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      GARMIN_USERNAME: "${GARMIN_USERNAME:-}"
+      GARMIN_PASSWORD: "${GARMIN_PASSWORD:-}"
+      SECRET_KEY: "${SECRET_KEY}"
+      CORS_ORIGINS: '["https://${DOMAIN}"]'
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_API_URL: "https://${DOMAIN}"
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  liveliness_data:
+  caddy_data:
+  caddy_config:
