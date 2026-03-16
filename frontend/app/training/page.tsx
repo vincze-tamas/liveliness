@@ -22,7 +22,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -233,15 +232,16 @@ function GoalForm({ onSaved, onCancel }: GoalFormProps) {
         </div>
         <div className="space-y-1">
           <Label htmlFor="goal-sport" className="text-xs">Primary sport *</Label>
-          <Select
+          <select
             id="goal-sport"
             value={sport}
             onChange={(e) => setSport(e.target.value)}
+            className="flex h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
           >
             {SPORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
-          </Select>
+          </select>
         </div>
         <div className="space-y-1">
           <Label htmlFor="goal-date" className="text-xs">Race date *</Label>
