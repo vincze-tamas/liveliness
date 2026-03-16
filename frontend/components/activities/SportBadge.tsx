@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Bike, Mountain, MountainSnow, Wind, Dumbbell, Footprints } from 'lucide-react'
+import { Bike, Mountain, MountainSnow, Wind, Dumbbell, Footprints, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type SportType =
@@ -12,7 +12,7 @@ export type SportType =
 
 interface SportConfig {
   label: string
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>
+  icon: LucideIcon
   bgColor: string
   textColor: string
 }
