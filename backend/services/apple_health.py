@@ -124,6 +124,10 @@ def parse_export_bytes(
                         existing = daily_metrics[date].get(field)
                         if existing is None or raw < existing:
                             daily_metrics[date][field] = raw
+                    # Steps and active energy are stored as many small samples
+                    # throughout the day — accumulate the daily total.
+                    elif field in ("steps", "active_energy_kcal"):
+                        daily_metrics[date][field] = (daily_metrics[date].get(field) or 0) + raw
                     else:
                         daily_metrics[date][field] = raw
 
