@@ -29,7 +29,9 @@ from services.training_load import compute_pmc
 
 logger = logging.getLogger(__name__)
 
-_MODEL = "claude-opus-4-6"
+_CLAUDE_MODEL = "claude-opus-4-6"
+_GEMINI_MODEL = "gemini-1.5-pro"
+_OPENAI_MODEL = "gpt-4o"
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -254,29 +256,76 @@ def _context_to_text(ctx: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Claude API helpers
+# LLM provider helpers
 # ---------------------------------------------------------------------------
 
-def _get_client() -> anthropic.Anthropic:
+def _effective_provider(user: "User | None" = None) -> str:
+    """Return the active LLM provider: user preference → env default."""
+    if user and user.llm_provider:
+        return user.llm_provider
+    return settings.llm_provider or "claude"
+
+
+def _call_claude(system: str, messages: list[dict[str, Any]], max_tokens: int) -> str:
     if not settings.anthropic_api_key:
         raise ValueError("ANTHROPIC_API_KEY is not configured")
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
-
-
-def _call_claude(
-    system: str,
-    messages: list[dict[str, Any]],
-    max_tokens: int,
-) -> str:
-    """Make a Claude API call and return the text response."""
-    client = _get_client()
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     response = client.messages.create(
-        model=_MODEL,
+        model=_CLAUDE_MODEL,
         max_tokens=max_tokens,
         system=system,
         messages=messages,
     )
     return response.content[0].text
+
+
+def _call_gemini(system: str, messages: list[dict[str, Any]], max_tokens: int) -> str:
+    if not settings.gemini_api_key:
+        raise ValueError("GEMINI_API_KEY is not configured")
+    import google.generativeai as genai  # type: ignore[import-untyped]
+    genai.configure(api_key=settings.gemini_api_key)
+    model = genai.GenerativeModel(
+        model_name=_GEMINI_MODEL,
+        system_instruction=system,
+    )
+    history = [
+        {"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]}
+        for m in messages[:-1]
+    ]
+    chat = model.start_chat(history=history)
+    response = chat.send_message(
+        messages[-1]["content"],
+        generation_config={"max_output_tokens": max_tokens},
+    )
+    return response.text
+
+
+def _call_openai(system: str, messages: list[dict[str, Any]], max_tokens: int) -> str:
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY is not configured")
+    from openai import OpenAI  # type: ignore[import-untyped]
+    client = OpenAI(api_key=settings.openai_api_key)
+    response = client.chat.completions.create(
+        model=_OPENAI_MODEL,
+        max_tokens=max_tokens,
+        messages=[{"role": "system", "content": system}, *messages],
+    )
+    return response.choices[0].message.content or ""
+
+
+def _call_llm(
+    system: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    user: "User | None" = None,
+) -> str:
+    """Route to the active LLM provider."""
+    provider = _effective_provider(user)
+    if provider == "gemini":
+        return _call_gemini(system, messages, max_tokens)
+    if provider == "openai":
+        return _call_openai(system, messages, max_tokens)
+    return _call_claude(system, messages, max_tokens)
 
 
 def _build_system(context: dict[str, Any]) -> str:
@@ -290,16 +339,22 @@ def _build_system(context: dict[str, Any]) -> str:
 def chat(
     messages: list[dict[str, str]],
     context: dict[str, Any],
+    user: "User | None" = None,
 ) -> str:
     """Free-form coaching chat. messages: list of {role, content}."""
-    return _call_claude(
+    return _call_llm(
         system=_build_system(context),
         messages=[{"role": m["role"], "content": m["content"]} for m in messages],
         max_tokens=1024,
+        user=user,
     )
 
 
-def debrief(activity_data: dict[str, Any], context: dict[str, Any]) -> str:
+def debrief(
+    activity_data: dict[str, Any],
+    context: dict[str, Any],
+    user: "User | None" = None,
+) -> str:
     """Generate a post-activity debrief for a completed session."""
     sport = activity_data.get("sport", "activity")
     duration_min = round((activity_data.get("duration_s") or 0) / 60)
@@ -315,14 +370,19 @@ def debrief(activity_data: dict[str, Any], context: dict[str, Any]) -> str:
         f"recent training? Is the athlete recovering well (TSB)? Any technique or pacing notes? "
         f"What should they focus on next?"
     )
-    return _call_claude(
+    return _call_llm(
         system=_build_system(context),
         messages=[{"role": "user", "content": prompt}],
         max_tokens=800,
+        user=user,
     )
 
 
-def weekly_narrative(plan_data: dict[str, Any], context: dict[str, Any]) -> str:
+def weekly_narrative(
+    plan_data: dict[str, Any],
+    context: dict[str, Any],
+    user: "User | None" = None,
+) -> str:
     """Generate an AI narrative / rationale for a weekly training plan."""
     plan_text = json.dumps(plan_data, default=str)
     prompt = (
@@ -331,14 +391,19 @@ def weekly_narrative(plan_data: dict[str, Any], context: dict[str, Any]) -> str:
         f"this load, and this focus given the athlete's current fitness and phase:\n\n"
         f"Plan:\n{plan_text}"
     )
-    return _call_claude(
+    return _call_llm(
         system=_build_system(context),
         messages=[{"role": "user", "content": prompt}],
         max_tokens=400,
+        user=user,
     )
 
 
-def nutrition_advice(context: dict[str, Any], tomorrow_plan: dict[str, Any] | None = None) -> str:
+def nutrition_advice(
+    context: dict[str, Any],
+    tomorrow_plan: dict[str, Any] | None = None,
+    user: "User | None" = None,
+) -> str:
     """Generate personalised daily nutrition advice."""
     tomorrow_text = (
         f"\nTomorrow's planned training: {json.dumps(tomorrow_plan, default=str)}"
@@ -350,10 +415,11 @@ def nutrition_advice(context: dict[str, Any], tomorrow_plan: dict[str, Any] | No
         "Focus on: what to eat today for recovery/preparation, key macro targets, "
         "hydration, and any timing recommendations around training." + tomorrow_text
     )
-    return _call_claude(
+    return _call_llm(
         system=_build_system(context),
         messages=[{"role": "user", "content": prompt}],
         max_tokens=400,
+        user=user,
     )
 
 

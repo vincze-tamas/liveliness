@@ -27,6 +27,7 @@ class User(Base):
     activity_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # sedentary/light/moderate/active/very_active
     garmin_username: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     garmin_password: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    llm_provider: Mapped[Optional[str]] = mapped_column(String, nullable=True)  # claude|gemini|openai
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -50,6 +51,7 @@ class UserCreate(BaseModel):
     lthr: Optional[int] = None
     garmin_username: Optional[str] = None
     garmin_password: Optional[str] = None
+    llm_provider: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -68,6 +70,7 @@ class UserUpdate(BaseModel):
     lthr: Optional[int] = None
     garmin_username: Optional[str] = None
     garmin_password: Optional[str] = None
+    llm_provider: Optional[str] = None
 
 
 class UserRead(BaseModel):
@@ -86,6 +89,7 @@ class UserRead(BaseModel):
     ftp_cycling_w: Optional[float] = None
     lthr: Optional[int] = None
     garmin_username: Optional[str] = None
+    llm_provider: Optional[str] = None
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}

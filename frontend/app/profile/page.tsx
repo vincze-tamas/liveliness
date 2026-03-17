@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Save, RefreshCw, Upload, User, AlertCircle, CheckCircle } from 'lucide-react'
+import { Save, RefreshCw, Upload, User, AlertCircle, CheckCircle, Bot } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,6 +22,12 @@ interface ProfileData {
   thresholdPace: string
   garminUsername: string
   garminPassword: string
+  llmProvider: string
+}
+
+interface CoachConfig {
+  active_provider: string
+  available: { claude: boolean; gemini: boolean; openai: boolean }
 }
 
 const EMPTY_PROFILE: ProfileData = {
@@ -36,7 +43,14 @@ const EMPTY_PROFILE: ProfileData = {
   thresholdPace: '',
   garminUsername: '',
   garminPassword: '',
+  llmProvider: '',
 }
+
+const LLM_OPTIONS = [
+  { value: 'claude', label: 'Claude (Anthropic)', envKey: 'claude' },
+  { value: 'gemini', label: 'Gemini Pro (Google)', envKey: 'gemini' },
+  { value: 'openai', label: 'GPT-4o (OpenAI)', envKey: 'openai' },
+]
 
 /** Convert "mm:ss" pace string to seconds per km, or null if unparseable. */
 function parsePaceToSeconds(pace: string): number | null {
@@ -66,6 +80,12 @@ export default function ProfilePage() {
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<string | null>(null)
 
+  const { data: coachConfig } = useQuery<CoachConfig>({
+    queryKey: ['coach-config'],
+    queryFn: () => apiFetch<CoachConfig>('/api/coach/config'),
+    retry: false,
+  })
+
   // Load existing profile on mount
   useEffect(() => {
     apiFetch<{
@@ -80,6 +100,7 @@ export default function ProfilePage() {
       ftp_running_pace_s_per_km?: number | null
       garmin_username?: string | null
       activity_level?: string | null
+      llm_provider?: string | null
     }>('/api/profile')
       .then((data) => {
         setProfileExists(true)
@@ -99,6 +120,7 @@ export default function ProfilePage() {
               : '',
           garminUsername: data.garmin_username ?? '',
           garminPassword: '',
+          llmProvider: data.llm_provider ?? '',
         })
       })
       .catch(() => {
@@ -140,6 +162,7 @@ export default function ProfilePage() {
         garmin_username: profile.garminUsername || null,
         // Only send password if the user typed something
         ...(profile.garminPassword ? { garmin_password: profile.garminPassword } : {}),
+        llm_provider: profile.llmProvider || null,
       }
 
       if (profileExists) {
@@ -445,6 +468,64 @@ export default function ProfilePage() {
           </label>
           {importResult && (
             <p className="text-sm text-slate-600 dark:text-slate-300">{importResult}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Coach AI */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="w-4 h-4 text-teal-600" />
+            Coach AI
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="llmProvider">Active provider</Label>
+            <select
+              id="llmProvider"
+              value={profile.llmProvider || coachConfig?.active_provider || 'claude'}
+              onChange={handleChange('llmProvider')}
+              className="flex h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
+            >
+              <option value="">Default (from server config)</option>
+              {LLM_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+              Overrides the server-level LLM_PROVIDER setting for your session.
+            </p>
+          </div>
+
+          {coachConfig && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">API keys configured on server</p>
+              <div className="grid grid-cols-3 gap-2">
+                {LLM_OPTIONS.map((o) => {
+                  const ok = coachConfig.available[o.envKey as keyof typeof coachConfig.available]
+                  return (
+                    <div
+                      key={o.value}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${
+                        ok
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                          : 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500'
+                      }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${ok ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                      {o.value.charAt(0).toUpperCase() + o.value.slice(1)}
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Set <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 rounded">ANTHROPIC_API_KEY</code>,{' '}
+                <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 rounded">GEMINI_API_KEY</code>, or{' '}
+                <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 rounded">OPENAI_API_KEY</code> in your server <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 rounded">.env</code> file.
+              </p>
+            </div>
           )}
         </CardContent>
       </Card>

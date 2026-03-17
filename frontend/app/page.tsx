@@ -14,12 +14,25 @@ import {
   Scale,
 } from 'lucide-react'
 import Link from 'next/link'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { SportBadge, type SportType } from '@/components/activities/SportBadge'
+import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
 import { formatDuration, formatDistance, formatLongDate } from '@/lib/format'
 
@@ -57,8 +70,20 @@ interface ActivityRead {
 
 const KNOWN_SPORTS: SportType[] = ['trail_run', 'mtb', 'road_bike', 'ski_alpine', 'inline_skate', 'gym']
 
+const PMC_RANGES = [
+  { label: '7d',  days: 7 },
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+  { label: '180d', days: 180 },
+  { label: '1y',  days: 365 },
+  { label: '2y',  days: 730 },
+]
+
 export default function DashboardPage() {
+  const [pmcDays, setPmcDays] = useState(90)
+
   const today = new Date()
+  const todayStr = today.toISOString().slice(0, 10)
   const formattedDate = today.toLocaleDateString('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -72,9 +97,9 @@ export default function DashboardPage() {
     retry: false,
   })
 
-  const { data: pmc } = useQuery<PmcPoint[]>({
-    queryKey: ['pmc-7'],
-    queryFn: () => apiFetch<PmcPoint[]>('/api/statistics/pmc?days=7'),
+  const { data: pmc, isLoading: pmcLoading } = useQuery<PmcPoint[]>({
+    queryKey: ['pmc', pmcDays],
+    queryFn: () => apiFetch<PmcPoint[]>(`/api/statistics/pmc?days=${pmcDays}`),
   })
 
   const { data: weeklyStats } = useQuery<WeekSummary[]>({
@@ -88,6 +113,10 @@ export default function DashboardPage() {
   })
 
   const latestPmc = pmc && pmc.length > 0 ? pmc[pmc.length - 1] : null
+
+  // Downsample PMC for chart
+  const pmcStep = Math.max(1, Math.floor((pmc?.length ?? 0) / 80))
+  const pmcChart = (pmc ?? []).filter((_, i) => i % pmcStep === 0)
   const currentWeek = weeklyStats && weeklyStats.length > 0
     ? weeklyStats[weeklyStats.length - 1]
     : null
@@ -159,11 +188,12 @@ export default function DashboardPage() {
 
       {/* Training Load */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-2">
           <CardTitle>Training Load</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-3 gap-4">
+          {/* Current values */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="text-center">
               <p className="text-2xl font-bold text-teal-600 dark:text-teal-400">
                 {latestPmc ? Math.round(latestPmc.ctl) : '—'}
@@ -182,7 +212,7 @@ export default function DashboardPage() {
               <p className={`text-2xl font-bold ${
                 latestPmc
                   ? latestPmc.tsb >= 0 ? 'text-emerald-500' : 'text-rose-500'
-                  : 'text-indigo-500'
+                  : 'text-violet-500'
               }`}>
                 {latestPmc ? Math.round(latestPmc.tsb) : '—'}
               </p>
@@ -190,8 +220,52 @@ export default function DashboardPage() {
               <p className="text-xs text-slate-400 dark:text-slate-500">Form</p>
             </div>
           </div>
-          {!latestPmc && (
-            <p className="mt-3 text-xs text-slate-400 dark:text-slate-500 text-center">
+
+          {/* Time range filter */}
+          <div className="flex gap-1 flex-wrap mb-3">
+            {PMC_RANGES.map((r) => (
+              <button
+                key={r.days}
+                onClick={() => setPmcDays(r.days)}
+                className={cn(
+                  'px-2.5 py-1 rounded-lg text-xs font-medium transition-colors',
+                  pmcDays === r.days
+                    ? 'bg-teal-600 text-white'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                )}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Chart */}
+          {pmcLoading ? (
+            <Skeleton className="h-40 w-full rounded-xl" />
+          ) : pmcChart.length > 0 ? (
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={pmcChart} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 9 }}
+                  tickFormatter={(v: string) => v.slice(5)}
+                  interval="preserveStartEnd"
+                />
+                <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} />
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                  formatter={(v: number, name: string) => [Math.round(v), name.toUpperCase()]}
+                />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <ReferenceLine x={todayStr} stroke="#94a3b8" strokeDasharray="4 2" />
+                <Line type="monotone" dataKey="ctl" stroke="#14b8a6" strokeWidth={1.5} dot={false} name="CTL" />
+                <Line type="monotone" dataKey="atl" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="ATL" />
+                <Line type="monotone" dataKey="tsb" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="TSB" />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-4">
               Training load metrics will appear after syncing activities
             </p>
           )}

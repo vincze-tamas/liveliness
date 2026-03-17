@@ -16,8 +16,21 @@ import {
   Dumbbell,
   Footprints,
   AlertCircle,
+  Pencil,
+  ChevronDown,
 } from 'lucide-react'
 import Link from 'next/link'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ReferenceLine,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -49,7 +62,7 @@ interface TrainingPlan {
   goal_description: string | null
   planned_tss: number | null
   planned_hours: number | null
-  sessions: string | null  // JSON string
+  sessions: string | null
 }
 
 interface Session {
@@ -60,6 +73,14 @@ interface Session {
   target_tss: number
   description: string
   is_rest: boolean
+}
+
+interface PmcPoint {
+  date: string
+  tss: number
+  ctl: number
+  atl: number
+  tsb: number
 }
 
 // ---------------------------------------------------------------------------
@@ -81,11 +102,11 @@ const PHASE_STYLES: Record<string, string> = {
 }
 
 const SPORT_OPTIONS = [
-  { value: 'trail_run',   label: 'Trail Running' },
-  { value: 'road_bike',   label: 'Road Biking' },
-  { value: 'mtb',         label: 'Mountain Biking' },
-  { value: 'ski_alpine',  label: 'Alpine Skiing' },
-  { value: 'inline_skate',label: 'Inline Skating' },
+  { value: 'trail_run',    label: 'Trail Running' },
+  { value: 'road_bike',    label: 'Road Biking' },
+  { value: 'mtb',          label: 'Mountain Biking' },
+  { value: 'ski_alpine',   label: 'Alpine Skiing' },
+  { value: 'inline_skate', label: 'Inline Skating' },
 ]
 
 const SPORT_ICON: Record<string, React.ReactNode> = {
@@ -137,6 +158,10 @@ function daysUntil(dateStr: string): number {
   return Math.round((target.getTime() - today.getTime()) / 86400000)
 }
 
+function isInPast(dateStr: string): boolean {
+  return daysUntil(dateStr) < 0
+}
+
 function weekRangeLabel(): string {
   const today = new Date()
   const dow = today.getDay()
@@ -154,32 +179,49 @@ function parseSessions(json: string | null): Session[] {
   try { return JSON.parse(json) as Session[] } catch { return [] }
 }
 
+function fmtDate(dateStr: string): string {
+  return new Date(dateStr).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+}
+
 // ---------------------------------------------------------------------------
-// Goal Form
+// Goal Form (create + edit)
 // ---------------------------------------------------------------------------
 
 interface GoalFormProps {
+  initial?: RaceGoal
   onSaved: () => void
   onCancel: () => void
 }
 
-function GoalForm({ onSaved, onCancel }: GoalFormProps) {
-  const [name, setName] = useState('')
-  const [sport, setSport] = useState('trail_run')
-  const [raceDate, setRaceDate] = useState('')
-  const [distanceKm, setDistanceKm] = useState('')
-  const [targetTime, setTargetTime] = useState('')   // hh:mm:ss or mm:ss
-  const [notes, setNotes] = useState('')
+function GoalForm({ initial, onSaved, onCancel }: GoalFormProps) {
+  const [name, setName] = useState(initial?.name ?? '')
+  const [sport, setSport] = useState(initial?.sport ?? 'trail_run')
+  const [raceDate, setRaceDate] = useState(initial?.race_date ?? '')
+  const [distanceKm, setDistanceKm] = useState(
+    initial?.distance_km != null ? String(initial.distance_km) : ''
+  )
+  const [targetTime, setTargetTime] = useState(
+    initial?.target_time_s != null ? fmtTargetTime(initial.target_time_s) : ''
+  )
+  const [notes, setNotes] = useState(initial?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
 
   const qc = useQueryClient()
+  const isEdit = !!initial
 
   const mutation = useMutation({
     mutationFn: (body: object) =>
-      apiFetch<RaceGoal>('/api/training/goals', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      }),
+      isEdit
+        ? apiFetch<RaceGoal>(`/api/training/goals/${initial!.id}`, {
+            method: 'PUT',
+            body: JSON.stringify(body),
+          })
+        : apiFetch<RaceGoal>('/api/training/goals', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['training-goals'] })
       onSaved()
@@ -236,7 +278,7 @@ function GoalForm({ onSaved, onCancel }: GoalFormProps) {
             id="goal-sport"
             value={sport}
             onChange={(e) => setSport(e.target.value)}
-            className="flex h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
+            className="flex h-10 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
           >
             {SPORT_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -291,14 +333,129 @@ function GoalForm({ onSaved, onCancel }: GoalFormProps) {
       )}
 
       <div className="flex gap-2 justify-end pt-1">
-        <Button type="button" variant="outline" size="sm" onClick={onCancel}>
-          Cancel
-        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onCancel}>Cancel</Button>
         <Button type="submit" size="sm" disabled={mutation.isPending}>
-          {mutation.isPending ? 'Saving…' : 'Save Goal'}
+          {mutation.isPending ? 'Saving…' : isEdit ? 'Update Goal' : 'Save Goal'}
         </Button>
       </div>
     </form>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Session detail modal (simple overlay, no Radix dep needed)
+// ---------------------------------------------------------------------------
+
+function SessionModal({ session, day, onClose }: { session: Session; day: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center sm:items-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div
+        className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={cn('', SPORT_COLOUR[session.sport] ?? 'text-slate-400')}>
+              {SPORT_ICON[session.sport] ?? <Footprints className="w-4 h-4" />}
+            </span>
+            <h3 className="font-semibold text-slate-900 dark:text-white">{day}</h3>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex gap-2 flex-wrap">
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 capitalize">
+            {session.sport.replace(/_/g, ' ')}
+          </span>
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 capitalize">
+            {SESSION_TYPE_LABEL[session.session_type] ?? session.session_type}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-3">
+            <p className="text-xs text-slate-400 dark:text-slate-500">Duration</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white">{session.target_duration_min}<span className="text-xs font-normal ml-0.5">min</span></p>
+          </div>
+          <div className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-3">
+            <p className="text-xs text-slate-400 dark:text-slate-500">Target TSS</p>
+            <p className="text-lg font-bold text-slate-900 dark:text-white">{session.target_tss}</p>
+          </div>
+        </div>
+
+        {session.description && (
+          <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            {session.description}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// PMC mini-chart for Current Phase section
+// ---------------------------------------------------------------------------
+
+function PmcPhaseChart({ nextGoalDate }: { nextGoalDate: string | null }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const daysToRace = nextGoalDate ? Math.max(daysUntil(nextGoalDate), 0) : 0
+  const pmcDays = Math.min(Math.max(daysToRace + 30, 90), 365)
+
+  const { data: pmc } = useQuery<PmcPoint[]>({
+    queryKey: ['pmc-phase', pmcDays],
+    queryFn: () => apiFetch<PmcPoint[]>(`/api/statistics/pmc?days=${pmcDays}`),
+  })
+
+  if (!pmc || pmc.length === 0) return null
+
+  // Downsample for mobile: show every Nth point
+  const step = Math.max(1, Math.floor(pmc.length / 60))
+  const data = pmc.filter((_, i) => i % step === 0)
+
+  return (
+    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
+        PMC — road to race
+      </p>
+      <ResponsiveContainer width="100%" height={160}>
+        <LineChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 9 }}
+            tickFormatter={(v: string) => v.slice(5)}
+            interval="preserveStartEnd"
+          />
+          <YAxis tick={{ fontSize: 9 }} domain={['auto', 'auto']} />
+          <Tooltip
+            contentStyle={{ fontSize: 11, borderRadius: 8 }}
+            formatter={(v: number, name: string) => [Math.round(v), name.toUpperCase()]}
+            labelFormatter={(l: string) => l}
+          />
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+          {/* Reference line: today */}
+          <ReferenceLine x={today} stroke="#94a3b8" strokeDasharray="4 2" label={{ value: 'Today', fontSize: 9, fill: '#94a3b8' }} />
+          {/* Reference line: race day */}
+          {nextGoalDate && nextGoalDate > today && (
+            <ReferenceLine x={nextGoalDate} stroke="#f43f5e" strokeDasharray="4 2" label={{ value: 'Race', fontSize: 9, fill: '#f43f5e' }} />
+          )}
+          <Line type="monotone" dataKey="ctl" stroke="#14b8a6" strokeWidth={1.5} dot={false} name="CTL" />
+          <Line type="monotone" dataKey="atl" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="ATL" />
+          {/* TSB — emphasized: thicker, always on top */}
+          <Line type="monotone" dataKey="tsb" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="TSB" />
+        </LineChart>
+      </ResponsiveContainer>
+      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+        TSB (form) is most critical for race day — aim for +5 to +15 at start.
+      </p>
+    </div>
   )
 }
 
@@ -308,6 +465,9 @@ function GoalForm({ onSaved, onCancel }: GoalFormProps) {
 
 export default function TrainingPage() {
   const [showGoalForm, setShowGoalForm] = useState(false)
+  const [editingGoal, setEditingGoal] = useState<RaceGoal | null>(null)
+  const [showPastGoals, setShowPastGoals] = useState(false)
+  const [selectedDaySession, setSelectedDaySession] = useState<{ day: string; session: Session } | null>(null)
   const [generateError, setGenerateError] = useState<string | null>(null)
 
   const qc = useQueryClient()
@@ -320,7 +480,7 @@ export default function TrainingPage() {
   const { data: plan, isLoading: planLoading } = useQuery<TrainingPlan>({
     queryKey: ['training-plan-current'],
     queryFn: () => apiFetch<TrainingPlan>('/api/training/plans/current'),
-    retry: false,  // 404 = no plan yet, that's fine
+    retry: false,
   })
 
   const generateMutation = useMutation({
@@ -339,15 +499,19 @@ export default function TrainingPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['training-goals'] }),
   })
 
-  const activeGoals = goals?.filter((g) => g.is_active) ?? []
-  const nextGoal = activeGoals.sort(
-    (a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime()
-  )[0]
+  const allGoals = goals ?? []
+  const upcomingGoals = allGoals
+    .filter((g) => g.is_active && !isInPast(g.race_date))
+    .sort((a, b) => new Date(a.race_date).getTime() - new Date(b.race_date).getTime())
+  const pastGoals = allGoals
+    .filter((g) => isInPast(g.race_date))
+    .sort((a, b) => new Date(b.race_date).getTime() - new Date(a.race_date).getTime())
+
+  const nextGoal = upcomingGoals[0] ?? null
 
   const currentPhase = plan?.phase ?? null
   const sessions = parseSessions(plan?.sessions ?? null)
 
-  // Map sessions by day for the calendar grid
   const sessionByDay: Record<string, Session> = {}
   for (const s of sessions) sessionByDay[s.day] = s
 
@@ -360,14 +524,14 @@ export default function TrainingPage() {
         </p>
       </div>
 
-      {/* ── Race Goal ─────────────────────────────────────────────────────── */}
+      {/* ── Race Goals ─────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="flex items-center gap-2">
             <Target className="w-4 h-4 text-teal-600" />
-            Race Goal
+            Race Goals
           </CardTitle>
-          {!showGoalForm && (
+          {!showGoalForm && !editingGoal && (
             <Button
               variant="outline"
               size="sm"
@@ -380,71 +544,100 @@ export default function TrainingPage() {
           )}
         </CardHeader>
         <CardContent>
-          {showGoalForm ? (
+          {/* Add form */}
+          {showGoalForm && (
             <GoalForm
               onSaved={() => setShowGoalForm(false)}
               onCancel={() => setShowGoalForm(false)}
             />
-          ) : goalsLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-48" />
-              <Skeleton className="h-4 w-32" />
-            </div>
-          ) : nextGoal ? (
-            <div>
-              {/* Primary goal */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-white">{nextGoal.name}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                    {new Date(nextGoal.race_date).toLocaleDateString('en-GB', {
-                      day: 'numeric', month: 'long', year: 'numeric',
-                    })}
-                    {nextGoal.distance_km && ` · ${nextGoal.distance_km} km`}
-                    {nextGoal.target_time_s && ` · Target ${fmtTargetTime(nextGoal.target_time_s)}`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-teal-600 dark:text-teal-400 tabular-nums">
-                    {daysUntil(nextGoal.race_date)}d
-                  </span>
-                  <button
-                    onClick={() => deleteGoalMutation.mutate(nextGoal.id)}
-                    className="text-slate-400 hover:text-red-500 transition-colors"
-                    aria-label="Delete goal"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+          )}
 
-              {/* Other goals */}
-              {activeGoals.length > 1 && (
-                <div className="mt-3 space-y-1.5 border-t border-slate-100 dark:border-slate-700 pt-3">
-                  {activeGoals.slice(1).map((g) => (
-                    <div key={g.id} className="flex items-center justify-between text-sm">
-                      <span className="text-slate-600 dark:text-slate-300">{g.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-400">
-                          {new Date(g.race_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                        </span>
-                        <button
-                          onClick={() => deleteGoalMutation.mutate(g.id)}
-                          className="text-slate-300 hover:text-red-500 transition-colors"
-                          aria-label="Delete goal"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+          {/* Edit form */}
+          {editingGoal && (
+            <GoalForm
+              initial={editingGoal}
+              onSaved={() => setEditingGoal(null)}
+              onCancel={() => setEditingGoal(null)}
+            />
+          )}
+
+          {!showGoalForm && !editingGoal && (
+            <>
+              {goalsLoading ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-16 w-full rounded-xl" />
+                  <Skeleton className="h-16 w-full rounded-xl" />
+                </div>
+              ) : upcomingGoals.length > 0 ? (
+                <div className="space-y-2">
+                  {upcomingGoals.map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => setEditingGoal(g)}
+                      className="w-full text-left p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-teal-400 dark:hover:border-teal-600 hover:bg-teal-50/30 dark:hover:bg-teal-900/10 transition-colors group"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={cn('flex-shrink-0', SPORT_COLOUR[g.sport] ?? 'text-slate-400')}>
+                              {SPORT_ICON[g.sport] ?? <Target className="w-3.5 h-3.5" />}
+                            </span>
+                            <p className="font-semibold text-slate-900 dark:text-white truncate">{g.name}</p>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-5">
+                            {fmtDate(g.race_date)}
+                            {g.distance_km && ` · ${g.distance_km} km`}
+                            {g.target_time_s && ` · ${fmtTargetTime(g.target_time_s)}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-sm font-semibold text-teal-600 dark:text-teal-400 tabular-nums">
+                            {daysUntil(g.race_date)}d
+                          </span>
+                          <Pencil className="w-3.5 h-3.5 text-slate-300 group-hover:text-teal-500 transition-colors" />
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteGoalMutation.mutate(g.id) }}
+                            className="text-slate-300 hover:text-red-500 transition-colors p-0.5"
+                            aria-label="Delete goal"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
+              ) : (
+                <p className="text-sm text-slate-400 dark:text-slate-500">
+                  No upcoming race goals — add one to enable periodized planning.
+                </p>
               )}
-            </div>
-          ) : (
-            <p className="text-sm text-slate-400 dark:text-slate-500">
-              No race goal set — add one to enable periodized planning.
-            </p>
+
+              {/* Past goals */}
+              {pastGoals.length > 0 && (
+                <div className="mt-3">
+                  <button
+                    onClick={() => setShowPastGoals((v) => !v)}
+                    className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                  >
+                    <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', showPastGoals && 'rotate-180')} />
+                    Past goals ({pastGoals.length})
+                  </button>
+                  {showPastGoals && (
+                    <div className="mt-2 space-y-1.5 border-t border-slate-100 dark:border-slate-700 pt-2">
+                      {pastGoals.map((g) => (
+                        <div key={g.id} className="flex items-center justify-between text-sm px-1">
+                          <span className="text-slate-500 dark:text-slate-400 truncate">{g.name}</span>
+                          <span className="text-xs text-slate-400 ml-2 flex-shrink-0">
+                            {new Date(g.race_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -479,26 +672,23 @@ export default function TrainingPage() {
             <div className="flex gap-4 mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
               <div>
                 <p className="text-xs text-slate-400">Target TSS</p>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {plan.planned_tss}
-                </p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">{plan.planned_tss}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-400">Planned hours</p>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {plan.planned_hours} h
-                </p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">{plan.planned_hours} h</p>
               </div>
               {plan.goal_description && (
                 <div className="ml-auto max-w-[160px]">
                   <p className="text-xs text-slate-400 text-right">Goal</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 text-right truncate">
-                    {plan.goal_description}
-                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 text-right truncate">{plan.goal_description}</p>
                 </div>
               )}
             </div>
           )}
+
+          {/* PMC chart leading to next race */}
+          <PmcPhaseChart nextGoalDate={nextGoal?.race_date ?? null} />
         </CardContent>
       </Card>
 
@@ -538,32 +728,29 @@ export default function TrainingPage() {
               {WEEK_DAYS.map((day) => {
                 const s = sessionByDay[day]
                 const isToday =
-                  day ===
-                  WEEK_DAYS[
-                    ((new Date().getDay() + 6) % 7)  // Mon=0
-                  ]
+                  day === WEEK_DAYS[((new Date().getDay() + 6) % 7)]
                 return (
                   <div key={day} className="flex flex-col items-center gap-1">
                     <span
                       className={cn(
                         'text-xs font-medium',
-                        isToday
-                          ? 'text-teal-600 dark:text-teal-400'
-                          : 'text-slate-500 dark:text-slate-400'
+                        isToday ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500 dark:text-slate-400'
                       )}
                     >
                       {day}
                     </span>
-                    <div
+                    <button
+                      onClick={() => s && !s.is_rest && setSelectedDaySession({ day, session: s })}
                       className={cn(
-                        'w-full aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 px-0.5',
+                        'w-full aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 px-0.5 transition-colors',
                         isToday
                           ? 'ring-1 ring-teal-200 dark:ring-teal-800 bg-teal-50 dark:bg-teal-900/20'
                           : s?.is_rest
                           ? 'bg-slate-50 dark:bg-slate-700/30'
                           : 'bg-slate-50 dark:bg-slate-700/50',
+                        s && !s.is_rest && 'hover:ring-1 hover:ring-teal-300 dark:hover:ring-teal-700 cursor-pointer',
+                        (!s || s.is_rest) && 'cursor-default',
                       )}
-                      title={s?.description}
                     >
                       {s && !s.is_rest ? (
                         <span className={cn('', SPORT_COLOUR[s.sport] ?? 'text-slate-400')}>
@@ -577,7 +764,7 @@ export default function TrainingPage() {
                           {s.target_duration_min}m
                         </span>
                       )}
-                    </div>
+                    </button>
                   </div>
                 )
               })}
@@ -586,28 +773,13 @@ export default function TrainingPage() {
             <>
               <div className="grid grid-cols-7 gap-1.5">
                 {WEEK_DAYS.map((day) => {
-                  const isToday =
-                    day === WEEK_DAYS[((new Date().getDay() + 6) % 7)]
+                  const isToday = day === WEEK_DAYS[((new Date().getDay() + 6) % 7)]
                   return (
                     <div key={day} className="flex flex-col items-center gap-1">
-                      <span
-                        className={cn(
-                          'text-xs font-medium',
-                          isToday
-                            ? 'text-teal-600 dark:text-teal-400'
-                            : 'text-slate-500 dark:text-slate-400'
-                        )}
-                      >
+                      <span className={cn('text-xs font-medium', isToday ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500 dark:text-slate-400')}>
                         {day}
                       </span>
-                      <div
-                        className={cn(
-                          'w-full aspect-square rounded-xl flex items-center justify-center',
-                          isToday
-                            ? 'bg-teal-50 dark:bg-teal-900/20 ring-1 ring-teal-200 dark:ring-teal-800'
-                            : 'bg-slate-50 dark:bg-slate-700/50'
-                        )}
-                      >
+                      <div className={cn('w-full aspect-square rounded-xl flex items-center justify-center', isToday ? 'bg-teal-50 dark:bg-teal-900/20 ring-1 ring-teal-200 dark:ring-teal-800' : 'bg-slate-50 dark:bg-slate-700/50')}>
                         <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
                       </div>
                     </div>
@@ -642,6 +814,15 @@ export default function TrainingPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Session detail modal */}
+      {selectedDaySession && (
+        <SessionModal
+          session={selectedDaySession.session}
+          day={selectedDaySession.day}
+          onClose={() => setSelectedDaySession(null)}
+        />
+      )}
 
       <div className="h-2" />
     </div>

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import ai_unavailable, get_user
+from config import settings
 from database import get_db
 from models.activity import Activity
 from models.training_plan import TrainingPlan
@@ -66,7 +67,7 @@ async def coach_chat(
     messages = [{"role": m.role, "content": m.content} for m in payload.messages]
 
     try:
-        reply = coach_svc.chat(messages, context)
+        reply = coach_svc.chat(messages, context, user=user)
     except Exception as exc:
         logger.exception("Coach chat error")
         raise ai_unavailable(exc) from exc
@@ -111,7 +112,7 @@ async def coach_debrief(
     }
 
     try:
-        text = coach_svc.debrief(activity_data, context)
+        text = coach_svc.debrief(activity_data, context, user=user)
     except Exception as exc:
         logger.exception("Coach debrief error")
         raise ai_unavailable(exc) from exc
@@ -149,7 +150,7 @@ async def generate_weekly_narrative(
     }
 
     try:
-        narrative = coach_svc.weekly_narrative(plan_data, context)
+        narrative = coach_svc.weekly_narrative(plan_data, context, user=user)
     except Exception as exc:
         logger.exception("Weekly narrative error")
         raise ai_unavailable(exc) from exc
@@ -167,9 +168,25 @@ async def get_nutrition_advice(db: AsyncSession = Depends(get_db)) -> NutritionA
     context = await coach_svc.build_coaching_context(db, user)
 
     try:
-        advice = coach_svc.nutrition_advice(context)
+        advice = coach_svc.nutrition_advice(context, user=user)
     except Exception as exc:
         logger.exception("Nutrition advice error")
         raise ai_unavailable(exc) from exc
 
     return NutritionAdviceResponse(advice=advice)
+
+
+@router.get("/config")
+async def get_coach_config(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Return which LLM providers are configured and the active provider."""
+    result = await db.execute(select(__import__("models.user", fromlist=["User"]).User).limit(1))
+    user = result.scalar_one_or_none()
+    active = (user.llm_provider if user and user.llm_provider else None) or settings.llm_provider
+    return {
+        "active_provider": active,
+        "available": {
+            "claude": bool(settings.anthropic_api_key),
+            "gemini": bool(settings.gemini_api_key),
+            "openai": bool(settings.openai_api_key),
+        },
+    }
