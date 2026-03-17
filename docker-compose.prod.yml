@@ -15,6 +15,7 @@ services:
       SECRET_KEY: "${SECRET_KEY}"
       CORS_ORIGINS: '["https://${DOMAIN}"]'
     restart: unless-stopped
+    mem_limit: 384m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
@@ -35,6 +36,7 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    mem_limit: 512m
 
 volumes:
   liveliness_data:
