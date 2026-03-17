@@ -425,7 +425,9 @@ def nutrition_advice(
 
 def analyze_food_photo(image_bytes: bytes, mime_type: str) -> FoodAnalysis:
     """Use Claude Vision to identify foods in an image and estimate macros."""
-    client = _get_client()
+    if not settings.anthropic_api_key:
+        raise ValueError("ANTHROPIC_API_KEY is not configured")
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     image_b64 = base64.standard_b64encode(image_bytes).decode()
 
     prompt = (
@@ -441,7 +443,7 @@ def analyze_food_photo(image_bytes: bytes, mime_type: str) -> FoodAnalysis:
     )
 
     response = client.messages.create(
-        model=_MODEL,
+        model=_CLAUDE_MODEL,
         max_tokens=600,
         messages=[
             {

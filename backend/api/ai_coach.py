@@ -12,6 +12,7 @@ from config import settings
 from database import get_db
 from models.activity import Activity
 from models.training_plan import TrainingPlan
+from models.user import User
 import services.ai_coach as coach_svc
 
 logger = logging.getLogger(__name__)
@@ -179,14 +180,17 @@ async def get_nutrition_advice(db: AsyncSession = Depends(get_db)) -> NutritionA
 @router.get("/config")
 async def get_coach_config(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """Return which LLM providers are configured and the active provider."""
-    result = await db.execute(select(__import__("models.user", fromlist=["User"]).User).limit(1))
+    result = await db.execute(select(User).limit(1))
     user = result.scalar_one_or_none()
-    active = (user.llm_provider if user and user.llm_provider else None) or settings.llm_provider
+    active = (user.llm_provider if user and user.llm_provider else None) or settings.llm_provider or "claude"
+    available = {
+        "claude": bool(settings.anthropic_api_key),
+        "gemini": bool(settings.gemini_api_key),
+        "openai": bool(settings.openai_api_key),
+    }
     return {
         "active_provider": active,
-        "available": {
-            "claude": bool(settings.anthropic_api_key),
-            "gemini": bool(settings.gemini_api_key),
-            "openai": bool(settings.openai_api_key),
-        },
+        "available": available,
+        # warn if the active provider's key is not configured
+        "active_key_missing": not available.get(active, False),
     }

@@ -28,6 +28,7 @@ interface ProfileData {
 interface CoachConfig {
   active_provider: string
   available: { claude: boolean; gemini: boolean; openai: boolean }
+  active_key_missing: boolean
 }
 
 const EMPTY_PROFILE: ProfileData = {
@@ -498,6 +499,15 @@ export default function ProfilePage() {
               Overrides the server-level LLM_PROVIDER setting for your session.
             </p>
           </div>
+
+          {coachConfig?.active_key_missing && (
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                A kiválasztott provider API kulcsa hiányzik a szerveren — az AI nem fog válaszolni. Állítsd be a <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">.env</code> fájlban.
+              </p>
+            </div>
+          )}
 
           {coachConfig && (
             <div className="space-y-2">
