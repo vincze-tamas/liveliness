@@ -43,6 +43,11 @@ GARMIN_SPORT_MAP: dict[str, str] = {
     "walking": "walk",
 }
 
+# Max concurrent Garmin API calls (avoid rate limiting)
+_FETCH_CONCURRENCY = 5
+# Per-call timeout in seconds
+_CALL_TIMEOUT = 30
+
 
 async def _run_in_executor(func: Any, *args: Any) -> Any:
     """Run a blocking call in the default thread-pool executor."""
@@ -59,6 +64,34 @@ def _build_client(username: str, password: str) -> Any:
     return client
 
 
+async def _safe_fetch(func: Any, *args: Any) -> Any | None:
+    """Run a blocking Garmin call with a timeout; return None on any failure."""
+    try:
+        return await asyncio.wait_for(
+            _run_in_executor(func, *args),
+            timeout=_CALL_TIMEOUT,
+        )
+    except Exception:
+        return None
+
+
+async def _fetch_day(
+    client: Any,
+    date: datetime.date,
+    sem: asyncio.Semaphore,
+) -> tuple[datetime.date, dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, list | None]:
+    """Fetch all health data for a single day concurrently (under semaphore)."""
+    async with sem:
+        date_str = date.isoformat()
+        stats, hrv_data, sleep_data, weigh_ins = await asyncio.gather(
+            _safe_fetch(client.get_stats, date_str),
+            _safe_fetch(client.get_hrv_data, date_str),
+            _safe_fetch(client.get_sleep_data, date_str),
+            _safe_fetch(client.get_weigh_ins, date_str, date_str),
+        )
+    return date, stats, hrv_data, sleep_data, weigh_ins
+
+
 async def sync_garmin(
     user: User,
     db: AsyncSession,
@@ -71,7 +104,10 @@ async def sync_garmin(
     if not user.garmin_username or not user.garmin_password:
         raise ValueError("Garmin credentials not set in user profile")
 
-    client = await _run_in_executor(_build_client, user.garmin_username, user.garmin_password)
+    client = await asyncio.wait_for(
+        _run_in_executor(_build_client, user.garmin_username, user.garmin_password),
+        timeout=60,
+    )
 
     today = datetime.date.today()
     start_date = today - datetime.timedelta(days=days)
@@ -82,10 +118,13 @@ async def sync_garmin(
     # Activities                                                           #
     # ------------------------------------------------------------------ #
     try:
-        raw_activities: list[dict[str, Any]] = await _run_in_executor(
-            client.get_activities_by_date,
-            start_date.isoformat(),
-            today.isoformat(),
+        raw_activities: list[dict[str, Any]] = await asyncio.wait_for(
+            _run_in_executor(
+                client.get_activities_by_date,
+                start_date.isoformat(),
+                today.isoformat(),
+            ),
+            timeout=60,
         )
         for act in raw_activities:
             external_id = f"garmin_{act.get('activityId', '')}"
@@ -144,10 +183,20 @@ async def sync_garmin(
         logger.exception("Failed to fetch Garmin activities")
 
     # ------------------------------------------------------------------ #
-    # Daily health stats: steps, body battery, resting HR, HRV, sleep    #
+    # Daily health stats — Phase 1: fetch all days in parallel            #
     # ------------------------------------------------------------------ #
-    # Cache metrics objects by date so multiple data sources for the same
-    # day all update the same ORM object without duplicate INSERT attempts.
+    all_days = [
+        start_date + datetime.timedelta(days=i)
+        for i in range((today - start_date).days + 1)
+    ]
+    sem = asyncio.Semaphore(_FETCH_CONCURRENCY)
+    day_results = await asyncio.gather(
+        *[_fetch_day(client, d, sem) for d in all_days]
+    )
+
+    # ------------------------------------------------------------------ #
+    # Daily health stats — Phase 2: write to DB sequentially              #
+    # ------------------------------------------------------------------ #
     metrics_cache: dict[datetime.date, HealthMetrics] = {}
 
     async def _get_or_init_metrics(date: datetime.date) -> HealthMetrics:
@@ -168,68 +217,59 @@ async def sync_garmin(
         metrics_cache[date] = m
         return m
 
-    current = start_date
-    while current <= today:
-        date_str = current.isoformat()
-
+    for date, stats, hrv_data, sleep_data, weigh_ins in day_results:
         # Daily stats (steps, active kcal, resting HR, body battery)
-        try:
-            stats: dict[str, Any] = await _run_in_executor(client.get_stats, date_str)
-            m = await _get_or_init_metrics(current)
-            if stats.get("totalSteps"):
-                m.steps = int(stats["totalSteps"])
-            if stats.get("activeKilocalories"):
-                m.active_energy_kcal = float(stats["activeKilocalories"])
-            if stats.get("restingHeartRate"):
-                m.resting_hr = int(stats["restingHeartRate"])
-            bb = stats.get("bodyBatteryHighestValue")
-            if bb is not None:
-                m.body_battery = int(bb)
-        except Exception:
-            logger.debug("No daily stats for %s", date_str)
+        if stats:
+            try:
+                m = await _get_or_init_metrics(date)
+                if stats.get("totalSteps"):
+                    m.steps = int(stats["totalSteps"])
+                if stats.get("activeKilocalories"):
+                    m.active_energy_kcal = float(stats["activeKilocalories"])
+                if stats.get("restingHeartRate"):
+                    m.resting_hr = int(stats["restingHeartRate"])
+                bb = stats.get("bodyBatteryHighestValue")
+                if bb is not None:
+                    m.body_battery = int(bb)
+            except Exception:
+                logger.debug("Failed to process daily stats for %s", date)
 
         # HRV
-        try:
-            hrv_data: dict[str, Any] = await _run_in_executor(client.get_hrv_data, date_str)
-            hrv_val = hrv_data.get("hrvSummary", {}).get("lastNight")
-            if hrv_val is not None:
-                m = await _get_or_init_metrics(current)
-                m.hrv_ms = float(hrv_val)
-        except Exception:
-            logger.debug("No HRV data for %s", date_str)
+        if hrv_data:
+            try:
+                hrv_val = hrv_data.get("hrvSummary", {}).get("lastNight")
+                if hrv_val is not None:
+                    m = await _get_or_init_metrics(date)
+                    m.hrv_ms = float(hrv_val)
+            except Exception:
+                logger.debug("Failed to process HRV for %s", date)
 
         # Sleep
-        try:
-            sleep_data: dict[str, Any] = await _run_in_executor(
-                client.get_sleep_data, date_str
-            )
-            summary = sleep_data.get("dailySleepDTO", {})
-            sleep_secs = summary.get("sleepTimeSeconds")
-            if sleep_secs:
-                m = await _get_or_init_metrics(current)
-                m.sleep_hours = round(float(sleep_secs) / 3600.0, 2)
-                score = (summary.get("sleepScores") or {}).get("overall", {}).get("value")
-                if score is not None:
-                    m.sleep_score = int(score)
-        except Exception:
-            logger.debug("No sleep data for %s", date_str)
+        if sleep_data:
+            try:
+                summary = sleep_data.get("dailySleepDTO", {})
+                sleep_secs = summary.get("sleepTimeSeconds")
+                if sleep_secs:
+                    m = await _get_or_init_metrics(date)
+                    m.sleep_hours = round(float(sleep_secs) / 3600.0, 2)
+                    score = (summary.get("sleepScores") or {}).get("overall", {}).get("value")
+                    if score is not None:
+                        m.sleep_score = int(score)
+            except Exception:
+                logger.debug("Failed to process sleep for %s", date)
 
         # Weight
-        try:
-            weigh_ins: list[dict[str, Any]] = await _run_in_executor(
-                client.get_weigh_ins, date_str, date_str
-            )
-            for entry in weigh_ins or []:
-                w = entry.get("weight")
-                if w is not None:
-                    m = await _get_or_init_metrics(current)
-                    # Garmin returns weight in grams
-                    m.weight_kg = round(float(w) / 1000.0, 2)
-                    break
-        except Exception:
-            logger.debug("No weight data for %s", date_str)
-
-        current += datetime.timedelta(days=1)
+        if weigh_ins:
+            try:
+                for entry in weigh_ins:
+                    w = entry.get("weight")
+                    if w is not None:
+                        m = await _get_or_init_metrics(date)
+                        # Garmin returns weight in grams
+                        m.weight_kg = round(float(w) / 1000.0, 2)
+                        break
+            except Exception:
+                logger.debug("Failed to process weight for %s", date)
 
     await db.commit()
     return {"activities_inserted": activities_inserted, "metrics_upserted": metrics_upserted}
